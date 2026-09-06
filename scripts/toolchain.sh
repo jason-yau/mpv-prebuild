@@ -47,6 +47,9 @@ setup_target() {
   LDFLAGS_EXTRA=()
   NATIVE_BUILD=0
   MESON_NATIVE=""
+  HOST_CC=""
+  HOST_CFLAGS=""
+  HOST_LDFLAGS=""
 
   case "$OS" in
     android) _setup_android ;;
@@ -66,6 +69,7 @@ setup_target() {
   LDFLAGS_EXTRA+=(-lm)
 
   export CC CXX AR RANLIB STRIP NM PKG_CONFIG HOST_TRIPLE NATIVE_BUILD RC CMAKE_TOOLCHAIN_FILE
+  export HOST_CC HOST_CFLAGS HOST_LDFLAGS
   export CFLAGS="${CFLAGS_EXTRA[*]}"
   export CXXFLAGS="${CXXFLAGS_EXTRA[*]}"
   export LDFLAGS="${LDFLAGS_EXTRA[*]}"
@@ -342,6 +346,16 @@ _setup_darwin() {
   CXXFLAGS_EXTRA+=(-arch "$CLANG_ARCH" -isysroot "$sdk" "$minflag" -stdlib=libc++)
   LDFLAGS_EXTRA+=(-arch "$CLANG_ARCH" -isysroot "$sdk" "$minflag")
   export DEVELOPER_DIR="$xcode/Contents/Developer"
+
+  # FFmpeg host-cc tests do not inherit --extra-cflags. The Xcode clang
+  # binary will not find ctype.h without an SDK (unlike /usr/bin/clang).
+  local host_sdk="$sdk"
+  if [[ "$sdkname" != macosx ]]; then
+    host_sdk=$(xcrun --sdk macosx --show-sdk-path)
+  fi
+  HOST_CC="$toolchain/clang"
+  HOST_CFLAGS="-isysroot $host_sdk"
+  HOST_LDFLAGS="-isysroot $host_sdk"
 
   # Same-arch macOS is not a cross compile. A cross file without a build-machine
   # compiler makes fribidi gen.tab fail (meson 1.12: "No build machine compiler").

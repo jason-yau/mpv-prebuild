@@ -272,6 +272,7 @@ run_cmake() {
 
 write_pc() {
   local name="$1" version="$2" libs="$3"
+  local extra_cflags="${4:-}"
   ensure_dir "$PREFIX/lib/pkgconfig"
   cat >"$PREFIX/lib/pkgconfig/${name}.pc" <<EOF
 prefix=$PREFIX
@@ -283,7 +284,7 @@ Name: $name
 Description: $name
 Version: $version
 Libs: -L\${libdir} $libs
-Cflags: -I\${includedir}
+Cflags: -I\${includedir}${extra_cflags:+ $extra_cflags}
 EOF
 }
 

@@ -280,6 +280,15 @@ build_ffmpeg() {
     --arch="$FFMPEG_ARCH"
     --target-os="$FFMPEG_OS"
   )
+  if [[ -n "${HOST_CC:-}" ]]; then
+    cfg+=(--host-cc="$HOST_CC")
+  fi
+  if [[ -n "${HOST_CFLAGS:-}" ]]; then
+    cfg+=(--host-cflags="$HOST_CFLAGS")
+  fi
+  if [[ -n "${HOST_LDFLAGS:-}" ]]; then
+    cfg+=(--host-ldflags="$HOST_LDFLAGS")
+  fi
 
   if is_gpl; then
     cfg+=(
@@ -409,7 +418,7 @@ build_wayland() {
   rm -rf "$bdir"
   run_meson "$bdir" "$SRC_DIR/wayland" \
     -Ddefault_library=static \
-    -Ddocumentation=disabled \
+    -Ddocumentation=false \
     -Dtests=false \
     -Ddtd_validation=false
   stamp wayland
@@ -431,9 +440,11 @@ build_spirv_cross() {
     -DSPIRV_CROSS_ENABLE_MSL=ON \
     -DSPIRV_CROSS_ENABLE_REFLECT=ON \
     -DSPIRV_CROSS_ENABLE_UTIL=ON
-  # libplacebo looks for the shared C API name even when we ship a static archive.
-  write_pc spirv-cross-c-shared 1.4.321 \
-    "-lspirv-cross-c -lspirv-cross-glsl -lspirv-cross-hlsl -lspirv-cross-msl -lspirv-cross-cpp -lspirv-cross-reflect -lspirv-cross-util -lspirv-cross-core"
+  # Headers install to include/spirv_cross/; libplacebo includes <spirv_cross_c.h>.
+  # -lc++: static C++ archives linked into C libplacebo (llvm-mingw libc++).
+  write_pc spirv-cross-c-shared 0.67.0 \
+    "-lspirv-cross-c -lspirv-cross-glsl -lspirv-cross-hlsl -lspirv-cross-msl -lspirv-cross-cpp -lspirv-cross-reflect -lspirv-cross-util -lspirv-cross-core -lc++" \
+    '-I${includedir}/spirv_cross'
   stamp spirv-cross
 }
 
@@ -496,13 +507,14 @@ build_mpv() {
     -Dcdda=disabled
     -Dvapoursynth=disabled
     -Dvulkan=disabled
-    -Dlibplacebo=enabled
     -Dshaderc=disabled
     -Dspirv-cross=disabled
     -Dzimg=disabled
     -Dlcms2=disabled
     -Drubberband=disabled
-    -Dsdl2=disabled
+    -Dsdl2-audio=disabled
+    -Dsdl2-video=disabled
+    -Dsdl2-gamepad=disabled
     -Dmanpage-build=disabled
     -Dhtml-build=disabled
     -Dpdf-build=disabled
