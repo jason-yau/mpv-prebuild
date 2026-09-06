@@ -64,6 +64,11 @@ require_sources() {
       die "sources missing (libiconv); run without --skip-download"
     fi
   fi
+  if [[ "${OS:-}" == windows ]]; then
+    if [[ ! -d "$SRC_DIR/spirv-cross" || -z "$(ls -A "$SRC_DIR/spirv-cross" 2>/dev/null || true)" ]]; then
+      die "sources missing (spirv-cross); run without --skip-download"
+    fi
+  fi
   if [[ "${OS:-}" == linux ]]; then
     for name in libdisplay-info wayland wayland-protocols; do
       if [[ ! -d "$SRC_DIR/$name" || -z "$(ls -A "$SRC_DIR/$name" 2>/dev/null || true)" ]]; then

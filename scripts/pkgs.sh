@@ -286,14 +286,12 @@ build_ffmpeg() {
       --enable-gpl
       --enable-version3
       --enable-libx264
-      --enable-postproc
     )
   else
     cfg+=(
       --disable-gpl
       --disable-nonfree
       --enable-version3
-      --disable-postproc
     )
   fi
 
@@ -415,6 +413,28 @@ build_wayland() {
     -Dtests=false \
     -Ddtd_validation=false
   stamp wayland
+}
+
+build_spirv_cross() {
+  [[ "$OS" == windows ]] || return 0
+  is_stamped spirv-cross && { log "skip spirv-cross"; return; }
+  log "building spirv-cross"
+  run_cmake "$SRC_DIR/spirv-cross" \
+    -DSPIRV_CROSS_CLI=OFF \
+    -DSPIRV_CROSS_ENABLE_TESTS=OFF \
+    -DSPIRV_CROSS_SHARED=OFF \
+    -DSPIRV_CROSS_STATIC=ON \
+    -DSPIRV_CROSS_ENABLE_C_API=ON \
+    -DSPIRV_CROSS_ENABLE_CPP=ON \
+    -DSPIRV_CROSS_ENABLE_GLSL=ON \
+    -DSPIRV_CROSS_ENABLE_HLSL=ON \
+    -DSPIRV_CROSS_ENABLE_MSL=ON \
+    -DSPIRV_CROSS_ENABLE_REFLECT=ON \
+    -DSPIRV_CROSS_ENABLE_UTIL=ON
+  # libplacebo looks for the shared C API name even when we ship a static archive.
+  write_pc spirv-cross-c-shared 1.4.321 \
+    "-lspirv-cross-c -lspirv-cross-glsl -lspirv-cross-hlsl -lspirv-cross-msl -lspirv-cross-cpp -lspirv-cross-reflect -lspirv-cross-util -lspirv-cross-core"
+  stamp spirv-cross
 }
 
 build_libplacebo() {
@@ -591,6 +611,7 @@ build_deps() {
   build_libass
   build_libiconv
   build_uchardet
+  build_spirv_cross
   build_libplacebo
   build_libdisplay_info
   build_wayland

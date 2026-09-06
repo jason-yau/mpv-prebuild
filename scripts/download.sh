@@ -34,7 +34,7 @@ fetch() {
     fi
     log "downloading $name"
     log "  $url"
-    if curl -L --fail --retry 3 --retry-delay 2 --connect-timeout 20 \
+    if curl -L --fail --retry 3 --retry-delay 2 --retry-all-errors --connect-timeout 20 \
       -o "$archive.partial" "$url"; then
       mv "$archive.partial" "$archive"
       actual=$(sha256_of "$archive")
@@ -110,9 +110,13 @@ fetch_src ffmpeg     "$FFMPEG_URL"     "${FFMPEG_SHA256:-}"
 fetch_src mpv        "$MPV_URL"        "${MPV_SHA256:-}"
 fetch_src x264       "$X264_URL"       "${X264_SHA256:-}"
 fetch_src libplacebo         "$LIBPLACEBO_URL"           "${LIBPLACEBO_SHA256:-}"
-fetch_src libdisplay-info    "$LIBDISPLAY_INFO_URL"      "${LIBDISPLAY_INFO_SHA256:-}"
-fetch_src wayland            "$WAYLAND_URL"              "${WAYLAND_SHA256:-}"
-fetch_src wayland-protocols  "$WAYLAND_PROTOCOLS_URL"    "${WAYLAND_PROTOCOLS_SHA256:-}"
+fetch_src spirv-cross        "$SPIRV_CROSS_URL"          "${SPIRV_CROSS_SHA256:-}"
+fetch_src libdisplay-info    "$LIBDISPLAY_INFO_URL"      "${LIBDISPLAY_INFO_SHA256:-}" \
+  "https://mirrors.ustc.edu.cn/debian/pool/main/libd/libdisplay-info/libdisplay-info_0.3.0.orig.tar.bz2"
+fetch_src wayland            "$WAYLAND_URL"              "${WAYLAND_SHA256:-}" \
+  "https://mirrors.ustc.edu.cn/debian/pool/main/w/wayland/wayland_1.23.1.orig.tar.gz"
+fetch_src wayland-protocols  "$WAYLAND_PROTOCOLS_URL"    "${WAYLAND_PROTOCOLS_SHA256:-}" \
+  "https://mirrors.ustc.edu.cn/debian/pool/main/w/wayland-protocols/wayland-protocols_1.44.orig.tar.xz"
 
 # Release tarballs omit git submodules. Drop in glad (OpenGL) and fast_float.
 vendor_into() {
