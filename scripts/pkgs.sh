@@ -712,7 +712,17 @@ build_vulkan_loader() {
   )
   case "$OS" in
     windows) cmake_opts+=(-DUSE_MASM=OFF) ;;
-    macos|ios|iossimulator) cmake_opts+=(-DAPPLE_STATIC_LOADER=ON) ;;
+    macos) cmake_opts+=(-DAPPLE_STATIC_LOADER=ON) ;;
+    # CMAKE_SYSTEM_NAME is Darwin for all Apple targets, so CMake's IOS is
+    # false and platform_wsi omits VK_USE_PLATFORM_IOS_MVK. wsi.c errors
+    # when compiling with the iPhone SDK (TARGET_OS_IOS).
+    ios|iossimulator)
+      cmake_opts+=(
+        -DAPPLE_STATIC_LOADER=ON
+        -DIOS=TRUE
+        "-DCMAKE_C_FLAGS=${CFLAGS:+$CFLAGS }-DVK_USE_PLATFORM_IOS_MVK"
+      )
+      ;;
     linux)
       cmake_opts+=(
         -DBUILD_WSI_XCB_SUPPORT=ON
