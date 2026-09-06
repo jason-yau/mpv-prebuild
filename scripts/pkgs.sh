@@ -177,13 +177,19 @@ build_libiconv() {
     windows|android) ;;
     *) return 0 ;;
   esac
-  is_stamped libiconv && { log "skip libiconv"; return; }
+  is_stamped libiconv && {
+    log "skip libiconv"
+    _meson_link_iconv
+    return
+  }
   log "building libiconv"
   local bdir="$WORK_DIR/build/$TARGET_ID/libiconv"
   rm -rf "$bdir"
   ensure_dir "$bdir"
   local cfg=(
     --prefix="$PREFIX"
+    --libdir="$PREFIX/lib"
+    --includedir="$PREFIX/include"
     --host="$HOST_TRIPLE"
     --enable-static
     --disable-shared
@@ -198,10 +204,72 @@ build_libiconv() {
     make -j"$JOBS"
     make install
   )
+  if [[ -f "$PREFIX/lib64/libiconv.a" && ! -f "$PREFIX/lib/libiconv.a" ]]; then
+    ensure_dir "$PREFIX/lib"
+    cp -a "$PREFIX/lib64/libiconv.a" "$PREFIX/lib/libiconv.a"
+    [[ -f "$PREFIX/lib64/libcharset.a" ]] && cp -a "$PREFIX/lib64/libcharset.a" "$PREFIX/lib/libcharset.a"
+  fi
+  [[ -f "$PREFIX/lib/libiconv.a" ]] || die "libiconv.a missing after install (need GNU libiconv on $OS)"
+  [[ -f "$PREFIX/include/iconv.h" ]] || die "iconv.h missing after install"
   local libs="-liconv"
   [[ -f "$PREFIX/lib/libcharset.a" ]] && libs="-liconv -lcharset"
   write_pc iconv "$LIBICONV_VERSION" "$libs"
+  _meson_link_iconv
   stamp libiconv
+}
+
+# Meson dependency('iconv') only tries libc then find_library (not pkg-config).
+# find_library does not search -L from c_link_args; it uses compiler default dirs.
+_meson_link_iconv() {
+  case "$OS" in
+    windows|android) ;;
+    *) return 0 ;;
+  esac
+  local x already=0
+  for x in "${LDFLAGS_EXTRA[@]+"${LDFLAGS_EXTRA[@]}"}"; do
+    [[ "$x" == -liconv ]] && already=1
+  done
+  if [[ "$already" -eq 0 ]]; then
+    LDFLAGS_EXTRA+=(-liconv)
+    [[ -f "$PREFIX/lib/libcharset.a" ]] && LDFLAGS_EXTRA+=(-lcharset)
+    export LDFLAGS="${LDFLAGS_EXTRA[*]}"
+  fi
+  # MinGW find_library often looks for the import-lib name first.
+  if [[ "$OS" == windows && -f "$PREFIX/lib/libiconv.a" && ! -e "$PREFIX/lib/libiconv.dll.a" ]]; then
+    cp -a "$PREFIX/lib/libiconv.a" "$PREFIX/lib/libiconv.dll.a"
+  fi
+  _write_meson_cross
+}
+
+# mpv 0.41 ignores iconv.pc. Restore the tarball meson.build, then on
+# MinGW/Bionic point find_library at PREFIX/lib (current target).
+_mpv_iconv_meson() {
+  local f="$SRC_DIR/mpv/meson.build"
+  local orig="$SRC_DIR/mpv/meson.build.prebuild-orig"
+  [[ -f "$f" ]] || die "missing $f"
+  [[ -f "$orig" ]] || cp "$f" "$orig"
+  cp "$orig" "$f"
+  case "$OS" in
+    windows|android) ;;
+    *) return 0 ;;
+  esac
+  local libdir="$PREFIX/lib"
+  python3 -c '
+from pathlib import Path
+import sys
+path, libdir = Path(sys.argv[1]), sys.argv[2]
+text = path.read_text()
+old = "iconv = dependency('\''iconv'\'', required: get_option('\''iconv'\''))"
+new = (
+    "iconv = dependency('\''iconv'\'', required: false)\n"
+    "if not iconv.found()\n"
+    f"    iconv = cc.find_library('\''iconv'\'', dirs: ['\''{libdir}'\''], required: get_option('\''iconv'\''))\n"
+    "endif"
+)
+if old not in text:
+    sys.exit("mpv meson.build iconv lookup changed; cannot inject find_library")
+path.write_text(text.replace(old, new, 1))
+' "$f" "$libdir"
 }
 
 build_x264() {
@@ -281,7 +349,7 @@ build_ffmpeg() {
     --target-os="$FFMPEG_OS"
   )
   if [[ -n "${HOST_CC:-}" ]]; then
-    cfg+=(--host-cc="$HOST_CC")
+    cfg+=(--host-cc="$HOST_CC" --host-ld="$HOST_CC")
   fi
   if [[ -n "${HOST_CFLAGS:-}" ]]; then
     cfg+=(--host-cflags="$HOST_CFLAGS")
@@ -362,6 +430,8 @@ build_ffmpeg() {
 
   (
     cd "$bdir"
+    # Must not leak iOS targeting into HOSTCC/HOSTLD (swscale ops_asmgen).
+    unset IPHONEOS_DEPLOYMENT_TARGET SDKROOT
     "$SRC_DIR/ffmpeg/configure" "${cfg[@]}"
     make -j"$JOBS"
     make install
@@ -485,6 +555,7 @@ build_libplacebo() {
 build_mpv() {
   is_stamped mpv && { log "skip mpv"; return; }
   log "building mpv"
+  _mpv_iconv_meson
   local bdir="$WORK_DIR/build/$TARGET_ID/mpv"
   rm -rf "$bdir"
 

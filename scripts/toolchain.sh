@@ -36,10 +36,17 @@ setup_target() {
 
   # Rebuilding a second flavor in the same shell must not keep the previous prefix on PATH.
   : "${_PREBUILD_BASE_PATH:=$PATH}"
+  : "${_PREBUILD_BASE_PKG_CONFIG_PATH:=${PKG_CONFIG_PATH:-}}"
+  : "${_PREBUILD_BASE_LIBRARY_PATH:=${LIBRARY_PATH:-}}"
+  : "${_PREBUILD_BASE_CPATH:=${CPATH:-}}"
   export PATH="$PREFIX/bin:${_PREBUILD_BASE_PATH}"
+  export LIBRARY_PATH="$PREFIX/lib${_PREBUILD_BASE_LIBRARY_PATH:+:$_PREBUILD_BASE_LIBRARY_PATH}"
+  export CPATH="$PREFIX/include${_PREBUILD_BASE_CPATH:+:$_PREBUILD_BASE_CPATH}"
 
-  export PKG_CONFIG_LIBDIR="$PREFIX/lib/pkgconfig"
-  export PKG_CONFIG_PATH="$PREFIX/lib/pkgconfig"
+  # wayland-protocols (and other data-only packages) install .pc under share/.
+  local prefix_pc="$PREFIX/lib/pkgconfig:$PREFIX/share/pkgconfig"
+  export PKG_CONFIG_LIBDIR="$prefix_pc"
+  export PKG_CONFIG_PATH="$prefix_pc"
   unset PKG_CONFIG_SYSROOT_DIR || true
 
   CFLAGS_EXTRA=(-fPIC -O2 -DNDEBUG)
@@ -138,8 +145,9 @@ _setup_linux() {
   LDFLAGS_EXTRA+=(-static-libstdc++ -static-libgcc -pthread -Wl,-rpath,'$ORIGIN')
 
   # PREFIX first, but keep distro .pc files (alsa, pulse, x11, vaapi, …).
+  # share/pkgconfig is required: wayland-protocols installs there, not lib/.
   unset PKG_CONFIG_LIBDIR
-  export PKG_CONFIG_PATH="$PREFIX/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+  export PKG_CONFIG_PATH="$PREFIX/lib/pkgconfig:$PREFIX/share/pkgconfig${_PREBUILD_BASE_PKG_CONFIG_PATH:+:$_PREBUILD_BASE_PKG_CONFIG_PATH}"
 }
 
 _host_ndk_tag() {
@@ -349,13 +357,23 @@ _setup_darwin() {
 
   # FFmpeg host-cc tests do not inherit --extra-cflags. The Xcode clang
   # binary will not find ctype.h without an SDK (unlike /usr/bin/clang).
+  # Pin -target to macOS: IPHONEOS_DEPLOYMENT_TARGET (from versions.env)
+  # makes Apple clang produce iOS binaries even with a MacOSX -isysroot,
+  # and HOSTLD ops_asmgen then dies with SIGKILL on the runner.
   local host_sdk="$sdk"
   if [[ "$sdkname" != macosx ]]; then
     host_sdk=$(xcrun --sdk macosx --show-sdk-path)
   fi
+  local host_cpu macos_min
+  case "$(uname -m)" in
+    arm64|aarch64) host_cpu=arm64 ;;
+    *) host_cpu=x86_64 ;;
+  esac
+  macos_min="${MACOSX_DEPLOYMENT_TARGET:-11.0}"
   HOST_CC="$toolchain/clang"
-  HOST_CFLAGS="-isysroot $host_sdk"
-  HOST_LDFLAGS="-isysroot $host_sdk"
+  HOST_CFLAGS="-isysroot $host_sdk -mmacosx-version-min=$macos_min -target ${host_cpu}-apple-macos${macos_min}"
+  HOST_LDFLAGS="$HOST_CFLAGS"
+  unset IPHONEOS_DEPLOYMENT_TARGET
 
   # Same-arch macOS is not a cross compile. A cross file without a build-machine
   # compiler makes fribidi gen.tab fail (meson 1.12: "No build machine compiler").
@@ -416,7 +434,7 @@ EOF
       cat <<EOF
 
 [properties]
-pkg_config_libdir = '$PREFIX/lib/pkgconfig'
+pkg_config_libdir = '$PREFIX/lib/pkgconfig:$PREFIX/share/pkgconfig'
 needs_exe_wrapper = true
 
 [host_machine]
