@@ -920,8 +920,8 @@ _shaderc_pc_libs() {
 }
 
 # Meson find_library(static: true) ignores LIBRARY_PATH / -L and uses
-# --print-search-dirs (empty of PREFIX on Apple clang). vulkan-sdk adds
-# $PREFIX/lib to dirs:. Resource-limits is looked up without that option.
+# --print-search-dirs (empty of PREFIX on Apple clang / NDK). vulkan-sdk
+# adds $PREFIX/lib to SPIRV dirs:; glslang and resource-limits omit it.
 _libplacebo_glslang_meson() {
   local f="$SRC_DIR/libplacebo/src/glsl/meson.build"
   local orig="$f.prebuild-orig"
@@ -934,14 +934,23 @@ from pathlib import Path
 import sys
 path, libdir = Path(sys.argv[1]), sys.argv[2]
 text = path.read_text()
-old = "cxx.find_library('\''glslang-default-resource-limits'\'', required: false)"
-new = (
-    "cxx.find_library('\''glslang-default-resource-limits'\'', required: false, "
-    f"static: true, dirs: ['\''{libdir}'\''])"
-)
-if old not in text:
-    sys.exit("libplacebo glsl/meson.build glslang lookup changed; cannot inject dirs")
-path.write_text(text.replace(old, new, 1))
+repls = [
+    (
+        "cxx.find_library('\''glslang-default-resource-limits'\'', required: false)",
+        "cxx.find_library('\''glslang-default-resource-limits'\'', required: false, "
+        f"static: true, dirs: ['\''{libdir}'\''])",
+    ),
+    (
+        "cxx.find_library('\''glslang'\'', required: required, static: static)",
+        "cxx.find_library('\''glslang'\'', required: required, static: static, "
+        "dirs: vulkan_lib_dirs)",
+    ),
+]
+for old, new in repls:
+    if old not in text:
+        sys.exit(f"libplacebo glsl/meson.build lookup changed; missing: {old}")
+    text = text.replace(old, new, 1)
+path.write_text(text)
 ' "$f" "$libdir"
 }
 
@@ -1009,7 +1018,6 @@ build_mpv() {
     -Dcdda=disabled
     -Dvapoursynth=disabled
     -Dvulkan=enabled
-    -Dshaderc=enabled
     -Dzimg=disabled
     -Dlcms2=enabled
     -Drubberband=disabled
@@ -1043,8 +1051,6 @@ build_mpv() {
     windows)
       opts+=(
         -Dwasapi=enabled
-        -Dshaderc=enabled
-        -Dspirv-cross=enabled
         -Dd3d11=enabled
         -Dgl-win32=enabled
         -Degl-angle=disabled
@@ -1119,10 +1125,12 @@ build_mpv() {
       ;;
   esac
 
+  # mpv 0.41 gates shaderc/spirv-cross on win32-desktop (D3D11 vo_gpu).
+  # Other OSes compile shaders inside libplacebo; forcing these on fails meson.
   if [[ "$OS" == windows ]]; then
-    opts+=(-Dspirv-cross=enabled)
+    opts+=(-Dshaderc=enabled -Dspirv-cross=enabled)
   else
-    opts+=(-Dspirv-cross=disabled)
+    opts+=(-Dshaderc=disabled -Dspirv-cross=disabled)
   fi
 
   run_meson "$bdir" "$SRC_DIR/mpv" "${opts[@]}"

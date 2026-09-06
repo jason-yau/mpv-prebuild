@@ -326,6 +326,33 @@ rust_triple() {
   esac
 }
 
+# cargo-c is a host binary. Cross targets put PREFIX on LIBRARY_PATH /
+# PKG_CONFIG_LIBDIR, so the host linker would pick the target zlib (COFF
+# llvm-mingw .obj on Windows, NDK on Android) instead of distro libz.
+_run_host_cargo() {
+  (
+    unset PKG_CONFIG_LIBDIR PKG_CONFIG_SYSROOT_DIR CMAKE_TOOLCHAIN_FILE CMAKE_PREFIX_PATH || true
+    unset CC CXX AR RANLIB STRIP NM RC CFLAGS CXXFLAGS LDFLAGS || true
+    if [[ -n "${_PREBUILD_BASE_PKG_CONFIG_PATH:-}" ]]; then
+      export PKG_CONFIG_PATH="$_PREBUILD_BASE_PKG_CONFIG_PATH"
+    else
+      unset PKG_CONFIG_PATH || true
+    fi
+    if [[ -n "${_PREBUILD_BASE_LIBRARY_PATH:-}" ]]; then
+      export LIBRARY_PATH="$_PREBUILD_BASE_LIBRARY_PATH"
+    else
+      unset LIBRARY_PATH || true
+    fi
+    if [[ -n "${_PREBUILD_BASE_CPATH:-}" ]]; then
+      export CPATH="$_PREBUILD_BASE_CPATH"
+    else
+      unset CPATH || true
+    fi
+    export PATH="${HOME:-/tmp}/.cargo/bin:${_PREBUILD_BASE_PATH:-$PATH}"
+    "$@"
+  )
+}
+
 ensure_rust() {
   export PATH="${HOME:-/tmp}/.cargo/bin:$PATH"
   if ! command -v rustc >/dev/null 2>&1 || ! command -v cargo >/dev/null 2>&1; then
@@ -342,17 +369,7 @@ ensure_rust() {
   rustup target add "$rt"
   if ! command -v cargo-cinstall >/dev/null 2>&1; then
     log "installing cargo-c (libdovi C API)"
-    # cargo-c is a host binary (openssl-sys). Android/Windows set
-    # PKG_CONFIG_LIBDIR to the target prefix, which hides libssl-dev.
-    (
-      unset PKG_CONFIG_LIBDIR PKG_CONFIG_SYSROOT_DIR || true
-      if [[ -n "${_PREBUILD_BASE_PKG_CONFIG_PATH:-}" ]]; then
-        export PKG_CONFIG_PATH="$_PREBUILD_BASE_PKG_CONFIG_PATH"
-      else
-        unset PKG_CONFIG_PATH || true
-      fi
-      cargo install cargo-c --locked
-    )
+    _run_host_cargo cargo install cargo-c --locked
   fi
 }
 
