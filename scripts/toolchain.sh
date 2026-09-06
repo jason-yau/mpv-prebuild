@@ -376,6 +376,10 @@ _setup_darwin() {
   LDFLAGS_EXTRA+=(-arch "$CLANG_ARCH" -isysroot "$sdk" "$minflag")
   # iconv lives in libiconv, not libSystem. Meson builtin links() needs -liconv.
   LDFLAGS_EXTRA+=(-liconv)
+  # mpv 0.41 audiounit.m uses AVAudioSession; meson only links Foundation+AudioToolbox.
+  if [[ "$OS" == ios || "$OS" == iossimulator ]]; then
+    LDFLAGS_EXTRA+=(-framework AVFoundation)
+  fi
   export DEVELOPER_DIR="$xcode/Contents/Developer"
 
   # FFmpeg host-cc tests do not inherit --extra-cflags. The Xcode clang

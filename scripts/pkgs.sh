@@ -1195,8 +1195,13 @@ build_mpv() {
       )
       ;;
     ios|iossimulator)
+      # CoreAudio.framework and AVFoundation exist in the iOS SDK, so meson
+      # auto-enables them. Those AOs use AudioDeviceID / HAL APIs that iOS
+      # does not provide. AudioUnit (RemoteIO + AVAudioSession) is the iOS AO.
       opts+=(
         -Daudiounit=enabled
+        -Dcoreaudio=disabled
+        -Davfoundation=disabled
         -Dios-gl=enabled
         -Dcocoa=disabled
         -Dswift-build=disabled
