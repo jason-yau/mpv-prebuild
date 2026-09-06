@@ -53,7 +53,8 @@ ubuntu:
     `hwdata` provides `/usr/share/hwdata/pnp.ids` at build time for libdisplay-info (vendored; Ubuntu 22.04 has no libdisplay-info-dev).
     `libffi-dev` is required when vendoring libwayland on Ubuntu 22.04 (distro wayland 1.20 is too old for mpv 0.41).
     mpv 0.41 X11 / VDPAU / JACK are GPL-only; lgpl Linux builds omit them.
-    Native PipeWire needs libpipewire-0.3 >= 0.3.57 (Ubuntu 24.04+). Ubuntu 22.04 still has Pulse/ALSA.
+    Native PipeWire needs libpipewire-0.3-dev. Ubuntu 22.04 ships 0.3.48; mpv 0.41
+    is patched at build time to accept that (upstream meson wants >= 0.3.57).
     python3-jinja2 is required to configure libplacebo.
 
 macos:

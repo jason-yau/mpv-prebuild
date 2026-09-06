@@ -41,7 +41,7 @@ You can also run a platform workflow on its own:
 
 - [Windows](.github/workflows/windows.yml) (`ubuntu-22.04` + llvm-mingw)
 - [Android](.github/workflows/android.yml) (`ubuntu-22.04` + NDK r29)
-- [Linux](.github/workflows/linux.yml) (`ubuntu-22.04` x86_64 / `ubuntu-24.04-arm` arm64)
+- [Linux](.github/workflows/linux.yml) (`ubuntu-22.04` x86_64 / `ubuntu-22.04-arm` arm64)
 - [Darwin](.github/workflows/darwin.yml) (`macos-15` + Xcode)
 
 ## Local builds
@@ -95,7 +95,7 @@ On Windows, place `libmpv-2.dll` next to the executable.
 
 Unpack `libmpv-linux-*.tar.gz` and link `lib/libmpv.so` with pkg-config or CMake as above.
 
-The x86_64 artifacts are built on Ubuntu 22.04 (glibc 2.35) and run on that or newer. arm64 artifacts are built on Ubuntu 24.04. Jammy is missing or too old for several mpv 0.41 deps, so the Linux build vendors them into the prefix instead of moving the runner (and glibc) to 24.04: **libdisplay-info**, **libwayland 1.23**, and **wayland-protocols 1.38**. Native PipeWire is enabled only when the distro provides `libpipewire-0.3 >= 0.3.57` (24.04 yes, 22.04 no); Pulse and ALSA still cover audio on jammy, including `pipewire-pulse`.
+Linux artifacts (x86_64 and arm64) are built on Ubuntu 22.04 (glibc 2.35) and run on that or newer. Jammy is missing or too old for several mpv 0.41 deps, so the Linux build vendors them into the prefix instead of moving the runner (and glibc) to 24.04: **libdisplay-info**, **libwayland 1.23**, and **wayland-protocols 1.38**. Native PipeWire is linked against the distro `libpipewire-0.3` (Ubuntu 22.04 is 0.3.48; mpv 0.41 is patched at build time because upstream wants 0.3.57). Pulse and ALSA remain available, including `pipewire-pulse`.
 
 mpv 0.41 treats X11, VDPAU, and JACK as GPL-only. **lgpl** Linux builds keep Wayland / DRM / GBM / EGL / VA-API (drm+wayland) / ALSA / Pulse / sndio. **gpl** adds X11, VDPAU, and JACK.
 

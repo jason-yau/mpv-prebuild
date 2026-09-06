@@ -41,7 +41,7 @@ Actions → **Build libmpv** → Run workflow，选择平台。打 `v*` 标签�
 
 - [Windows](.github/workflows/windows.yml)（`ubuntu-22.04` + llvm-mingw）
 - [Android](.github/workflows/android.yml)（`ubuntu-22.04` + NDK r29）
-- [Linux](.github/workflows/linux.yml)（`ubuntu-22.04` x86_64 / `ubuntu-24.04-arm` arm64）
+- [Linux](.github/workflows/linux.yml)（`ubuntu-22.04` x86_64 / `ubuntu-22.04-arm` arm64）
 - [Darwin](.github/workflows/darwin.yml)（`macos-15` + Xcode）
 
 ## 本地编译
@@ -95,7 +95,7 @@ Windows 运行时把 `libmpv-2.dll` 放到可执行文件旁。
 
 解压 `libmpv-linux-*.tar.gz` 后按上面的 pkg-config / CMake 方式链接 `lib/libmpv.so`。
 
-x86_64 产物在 Ubuntu 22.04（glibc 2.35）上构建，可在同等或更新的发行版上运行。arm64 产物在 Ubuntu 24.04 上构建。jammy 缺包或版本不够 mpv 0.41 用，Linux 构建会把这些编进 prefix，而不是把 runner（以及 glibc）升到 24.04：**libdisplay-info**、**libwayland 1.23**、**wayland-protocols 1.38**。原生 PipeWire 只在发行版提供 `libpipewire-0.3 >= 0.3.57` 时开启（24.04 可以，22.04 不行）；jammy 上仍有 Pulse / ALSA，包括 `pipewire-pulse`。
+Linux 产物（x86_64 和 arm64）都在 Ubuntu 22.04（glibc 2.35）上构建，可在同等或更新的发行版上运行。jammy 缺包或版本不够 mpv 0.41 用，Linux 构建会把这些编进 prefix，而不是把 runner（以及 glibc）升到 24.04：**libdisplay-info**、**libwayland 1.23**、**wayland-protocols 1.38**。原生 PipeWire 链发行版的 `libpipewire-0.3`（Ubuntu 22.04 是 0.3.48；mpv 0.41 上游要求 0.3.57，构建时会打兼容补丁）。Pulse / ALSA 仍然可用，包括 `pipewire-pulse`。
 
 mpv 0.41 里 X11、VDPAU、JACK 是 GPL-only。**lgpl** Linux 构建保留 Wayland / DRM / GBM / EGL / VA-API（drm+wayland）/ ALSA / Pulse / sndio。**gpl** 再加 X11、VDPAU、JACK。
 

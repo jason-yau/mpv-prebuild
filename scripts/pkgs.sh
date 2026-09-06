@@ -284,6 +284,46 @@ path.write_text(text.replace(old, new, 1))
 ' "$f" "$mode" "$libdir"
 }
 
+# Ubuntu 22.04 ships PipeWire 0.3.48; mpv 0.41 meson wants >= 0.3.57 because
+# ao_pipewire.c calls pw_stream_get_time_n() (added in 0.3.50). Jammy still
+# has pw_stream_get_time(). Link the distro client like Pulse/ALSA — do not
+# vendor a newer libpipewire (SPA modules must match the session daemon).
+_mpv_pipewire_compat() {
+  [[ "$OS" == linux ]] || return 0
+  local meson="$SRC_DIR/mpv/meson.build"
+  local ao="$SRC_DIR/mpv/audio/out/ao_pipewire.c"
+  [[ -f "$meson" && -f "$ao" ]] || die "missing mpv pipewire sources"
+  python3 - "$meson" "$ao" <<'PY'
+from pathlib import Path
+import sys
+meson, ao = Path(sys.argv[1]), Path(sys.argv[2])
+mt = meson.read_text()
+old = "pipewire = dependency('libpipewire-0.3', version: '>= 0.3.57', required: get_option('pipewire'))"
+new = "pipewire = dependency('libpipewire-0.3', version: '>= 0.3.48', required: get_option('pipewire'))"
+if old in mt:
+    meson.write_text(mt.replace(old, new, 1))
+elif new not in mt:
+    sys.exit("mpv meson.build pipewire version check changed")
+at = ao.read_text()
+if "mpv-prebuild-pw-stream-get-time-n" in at:
+    sys.exit(0)
+needle = "#if !PW_CHECK_VERSION(1, 0, 4)"
+if needle not in at:
+    sys.exit("ao_pipewire.c pw_stream_get_nsec guard changed")
+shim = """#if !PW_CHECK_VERSION(0, 3, 50)
+/* mpv-prebuild-pw-stream-get-time-n: jammy libpipewire 0.3.48 */
+static inline int pw_stream_get_time_n(struct pw_stream *s, struct pw_time *t, size_t size)
+{
+    (void)size;
+    return pw_stream_get_time(s, t);
+}
+#endif
+
+"""
+ao.write_text(at.replace(needle, shim + needle, 1))
+PY
+}
+
 build_x264() {
   is_stamped x264 && { log "skip x264"; return; }
   log "building x264"
@@ -524,25 +564,37 @@ import re
 import sys
 p = Path(sys.argv[1])
 t = p.read_text()
-if "mpv-prebuild-static-loader" in t:
-    sys.exit(0)
-t2, n = re.subn(
-    r"add_library\(\s*vulkan\s+SHARED\s+\$\{NORMAL_LOADER_SRCS\}\s+"
-    r"\$\{CMAKE_CURRENT_SOURCE_DIR\}/\$\{API_TYPE\}-1\.def\s+"
-    r"\$\{RC_FILE_LOCATION\}\s*\)",
-    "add_library(vulkan STATIC ${NORMAL_LOADER_SRCS}) # mpv-prebuild-static-loader",
-    t,
-    count=1,
-)
-t2 = t2.replace(
-    "add_library(vulkan SHARED)",
-    "add_library(vulkan STATIC) # mpv-prebuild-static-loader",
-)
-if re.search(r"add_library\(\s*vulkan\s+SHARED", t2):
-    sys.exit("Vulkan-Loader vulkan target is still SHARED")
-if t2 == t:
-    sys.exit("failed to patch Vulkan-Loader for a static library")
-p.write_text(t2)
+t2 = t
+if "mpv-prebuild-static-loader" not in t2:
+    t2, n = re.subn(
+        r"add_library\(\s*vulkan\s+SHARED\s+\$\{NORMAL_LOADER_SRCS\}\s+"
+        r"\$\{CMAKE_CURRENT_SOURCE_DIR\}/\$\{API_TYPE\}-1\.def\s+"
+        r"\$\{RC_FILE_LOCATION\}\s*\)",
+        "add_library(vulkan STATIC ${NORMAL_LOADER_SRCS}) # mpv-prebuild-static-loader",
+        t2,
+        count=1,
+    )
+    t2 = t2.replace(
+        "add_library(vulkan SHARED)",
+        "add_library(vulkan STATIC) # mpv-prebuild-static-loader",
+    )
+    if re.search(r"add_library\(\s*vulkan\s+SHARED", t2):
+        sys.exit("Vulkan-Loader vulkan target is still SHARED")
+    if t2 == t:
+        sys.exit("failed to patch Vulkan-Loader for a static library")
+# STATIC vulkan's INTERFACE deps (loader_specific_options) cannot be
+# install(EXPORT)ed. Skip the export block (same as APPLE_STATIC_LOADER).
+if "mpv-prebuild-skip-export" not in t2:
+    t2, n = re.subn(
+        r"install\(\s*TARGETS\s+vulkan\s+EXPORT\s+VulkanLoaderConfig\s*\)",
+        "return() # mpv-prebuild-skip-export\ninstall(TARGETS vulkan EXPORT VulkanLoaderConfig)",
+        t2,
+        count=1,
+    )
+    if n != 1:
+        sys.exit("failed to skip VulkanLoaderConfig export")
+if t2 != t:
+    p.write_text(t2)
 PY
 }
 
@@ -576,15 +628,18 @@ build_vulkan_loader() {
   esac
 
   _force_static_vulkan_loader
+  # CMAKE_SKIP_INSTALL_RULES: static vulkan links INTERFACE helpers
+  # (loader_specific_options) that are not in VulkanLoaderConfig's export set.
   local cmake_opts=(
+    -DCMAKE_SKIP_INSTALL_RULES=ON
     -DBUILD_TESTS=OFF
-    -DENABLE_WERROR=OFF
+    -DBUILD_WERROR=OFF
     -DUSE_GAS=OFF
-    -DUSE_MASM=OFF
     -DLOADER_CODEGEN=OFF
     -DVULKAN_HEADERS_INSTALL_DIR="$PREFIX"
   )
   case "$OS" in
+    windows) cmake_opts+=(-DUSE_MASM=OFF) ;;
     macos|ios|iossimulator) cmake_opts+=(-DAPPLE_STATIC_LOADER=ON) ;;
     linux)
       cmake_opts+=(
@@ -611,11 +666,24 @@ build_vulkan_loader() {
 build_xxhash() {
   is_stamped xxhash && { log "skip xxhash"; return; }
   log "building xxhash"
+  # xxHash 0.8.3: `if(DEFINED DISPATCH)` treats -DDISPATCH=OFF as on, then
+  # CMAKE_HOST_SYSTEM_INFORMATION reports the CI x86_64 box, so NDK arm64
+  # builds xxh_x86dispatch.c. Force the portable xxhash.c sources.
+  python3 - "$SRC_DIR/xxhash/cmake_unofficial/CMakeLists.txt" <<'PY'
+from pathlib import Path
+import sys
+p = Path(sys.argv[1])
+t = p.read_text()
+if "mpv-prebuild-no-xxhash-dispatch" in t:
+    sys.exit(0)
+old = "if((DEFINED DISPATCH) AND (DEFINED PLATFORM))"
+new = "if(FALSE) # mpv-prebuild-no-xxhash-dispatch"
+if old not in t:
+    sys.exit("xxHash CMakeLists.txt DISPATCH guard changed")
+p.write_text(t.replace(old, new, 1))
+PY
   CMAKE_BUILD_NAME=xxhash run_cmake "$SRC_DIR/xxhash/cmake_unofficial" \
-    -DXXHASH_BUILD_XXHSUM=OFF \
-    -DXXHASH_BUILD_ENABLE_INLINE_API=ON \
-    -DDISPATCH=OFF
-  # libplacebo looks up pkg-config name libxxhash (headers are inlined at compile).
+    -DXXHASH_BUILD_XXHSUM=OFF
   write_pc libxxhash "$XXHASH_VERSION" "-lxxhash"
   stamp xxhash
 }
@@ -838,6 +906,7 @@ build_mpv() {
   is_stamped mpv && { log "skip mpv"; return; }
   log "building mpv"
   _mpv_iconv_meson
+  _mpv_pipewire_compat
   local bdir="$WORK_DIR/build/$TARGET_ID/mpv"
   rm -rf "$bdir"
 
@@ -926,10 +995,10 @@ build_mpv() {
       ;;
     linux)
       local pipewire=disabled
-      if linux_pkg_atleast libpipewire-0.3 0.3.57; then
+      if linux_pkg_atleast libpipewire-0.3 0.3.48; then
         pipewire=enabled
       else
-        log "disabling pipewire: need libpipewire-0.3 >= 0.3.57 (have $(pkg-config --modversion libpipewire-0.3 2>/dev/null || echo none)); Pulse/ALSA still work"
+        log "disabling pipewire: need libpipewire-0.3 >= 0.3.48 (have $(pkg-config --modversion libpipewire-0.3 2>/dev/null || echo none)); Pulse/ALSA still work"
       fi
       # X11, VDPAU, and JACK are GPL-only in mpv 0.41; forcing them on lgpl fails meson.
       opts+=(
