@@ -656,7 +656,11 @@ build_vulkan_loader() {
 
   local bdir="$WORK_DIR/build/$TARGET_ID/vulkan-loader"
   local lib
-  lib=$(find "$bdir" \( -name 'libvulkan.a' -o -name 'libvulkan-1.a' \) | head -n1 || true)
+  # llvm-mingw: OUTPUT_NAME vulkan-1 + PREFIX "" → vulkan-1.a, not libvulkan.a.
+  lib=$(find "$bdir" \( \
+      -name 'libvulkan.a' -o -name 'libvulkan-1.a' \
+      -o -name 'vulkan.a' -o -name 'vulkan-1.a' \
+    \) | head -n1 || true)
   [[ -n "$lib" && -f "$lib" ]] || die "static libvulkan was not built"
   cp -a "$lib" "$PREFIX/lib/libvulkan.a"
   write_pc vulkan "$VULKAN_LOADER_VERSION" "$pc_libs"
@@ -760,7 +764,15 @@ build_spirv_cross() {
 }
 
 build_shaderc() {
-  is_stamped shaderc && { log "skip shaderc"; return; }
+  is_stamped shaderc && {
+    log "skip shaderc"
+    # Older installs omitted MachineIndependent/Versions.h; libplacebo needs it.
+    if [[ ! -f "$PREFIX/include/glslang/MachineIndependent/Versions.h" ]]; then
+      log "repairing glslang public headers"
+      _install_shaderc_glslang_headers "$WORK_DIR/build/$TARGET_ID/shaderc"
+    fi
+    return
+  }
   log "building shaderc"
   need_cmd python3
   local py
@@ -800,6 +812,10 @@ build_shaderc() {
   ensure_dir "$PREFIX/include/shaderc"
   cp -a "$SRC_DIR/shaderc/libshaderc/include/shaderc/." "$PREFIX/include/shaderc/"
 
+  # shaderc_combined does not depend on every glslang archive libplacebo
+  # find_library() wants (notably glslang-default-resource-limits).
+  _build_shaderc_glslang_pieces "$bdir"
+
   # Install the same glslang/SPIRV-Tools archives shaderc just built so
   # libplacebo -Dglslang can find_library them without a second compile.
   # shaderc.pc lists the pieces (not shaderc_combined) to avoid duplicate
@@ -821,7 +837,7 @@ build_shaderc() {
 _copy_shaderc_lib() {
   local bdir="$1" name="$2"
   local f
-  f=$(find "$bdir" -name "lib${name}.a" | head -n1 || true)
+  f=$(find "$bdir" \( -name "lib${name}.a" -o -name "${name}.a" \) | head -n1 || true)
   if [[ -n "$f" && -f "$f" ]]; then
     cp -a "$f" "$PREFIX/lib/lib${name}.a"
     return 0
@@ -829,10 +845,21 @@ _copy_shaderc_lib() {
   return 1
 }
 
+# cmake --target shaderc_combined skips StandAlone but also skips some
+# glslang archives that are not in shaderc's link closure.
+_build_shaderc_glslang_pieces() {
+  local bdir="$1" t
+  for t in \
+      SPIRV SPVRemapper glslang-default-resource-limits \
+      MachineIndependent GenericCodeGen OSDependent
+  do
+    cmake --build "$bdir" -j "$JOBS" --target "$t" || true
+  done
+}
+
 _install_shaderc_glslang_libs() {
   local bdir="$1"
-  local gsrc="$SRC_DIR/shaderc/third_party/glslang"
-  local name bi
+  local name
 
   _copy_shaderc_lib "$bdir" shaderc || die "libshaderc.a was not built"
   _copy_shaderc_lib "$bdir" shaderc_util || die "libshaderc_util.a was not built"
@@ -844,14 +871,39 @@ _install_shaderc_glslang_libs() {
   done
   [[ -f "$PREFIX/lib/libglslang.a" ]] || die "libglslang.a was not built"
   [[ -f "$PREFIX/lib/libSPIRV.a" ]] || die "libSPIRV.a was not built"
+  [[ -f "$PREFIX/lib/libglslang-default-resource-limits.a" ]] \
+    || die "libglslang-default-resource-limits.a was not built"
 
-  ensure_dir "$PREFIX/include/glslang"
+  _install_shaderc_glslang_headers "$bdir"
+}
+
+# Public glslang headers. ShaderLang.h includes ../MachineIndependent/Versions.h.
+_install_shaderc_glslang_headers() {
+  local bdir="${1:-}"
+  local gsrc="$SRC_DIR/shaderc/third_party/glslang"
+  local bi
+  [[ -f "$gsrc/glslang/Public/ShaderLang.h" ]] \
+    || die "glslang ShaderLang.h missing under shaderc/third_party"
+  [[ -f "$gsrc/glslang/MachineIndependent/Versions.h" ]] \
+    || die "glslang Versions.h missing under shaderc/third_party"
+
+  ensure_dir "$PREFIX/include/glslang/MachineIndependent"
   cp -a "$gsrc/glslang/Public" "$PREFIX/include/glslang/"
   cp -a "$gsrc/glslang/Include" "$PREFIX/include/glslang/"
+  cp -a "$gsrc/glslang/MachineIndependent/Versions.h" \
+    "$PREFIX/include/glslang/MachineIndependent/"
   cp -a "$gsrc/SPIRV" "$PREFIX/include/glslang/SPIRV"
-  bi=$(find "$bdir" -path '*glslang*' -name build_info.h | head -n1 || true)
-  [[ -n "$bi" && -f "$bi" ]] || die "glslang build_info.h was not generated"
-  cp -a "$bi" "$PREFIX/include/glslang/build_info.h"
+  [[ -f "$PREFIX/include/glslang/MachineIndependent/Versions.h" ]] \
+    || die "failed to install glslang MachineIndependent/Versions.h"
+
+  if [[ -n "$bdir" && -d "$bdir" ]]; then
+    bi=$(find "$bdir" -path '*glslang*' -name build_info.h | head -n1 || true)
+    if [[ -n "$bi" && -f "$bi" ]]; then
+      cp -a "$bi" "$PREFIX/include/glslang/build_info.h"
+    fi
+  fi
+  [[ -f "$PREFIX/include/glslang/build_info.h" ]] \
+    || die "glslang build_info.h was not generated"
 }
 
 _shaderc_pc_libs() {
@@ -867,10 +919,38 @@ _shaderc_pc_libs() {
   printf '%s' "$libs"
 }
 
+# Meson find_library(static: true) ignores LIBRARY_PATH / -L and uses
+# --print-search-dirs (empty of PREFIX on Apple clang). vulkan-sdk adds
+# $PREFIX/lib to dirs:. Resource-limits is looked up without that option.
+_libplacebo_glslang_meson() {
+  local f="$SRC_DIR/libplacebo/src/glsl/meson.build"
+  local orig="$f.prebuild-orig"
+  local libdir="$PREFIX/lib"
+  [[ -f "$f" ]] || die "missing $f"
+  [[ -f "$orig" ]] || cp "$f" "$orig"
+  cp "$orig" "$f"
+  python3 -c '
+from pathlib import Path
+import sys
+path, libdir = Path(sys.argv[1]), sys.argv[2]
+text = path.read_text()
+old = "cxx.find_library('\''glslang-default-resource-limits'\'', required: false)"
+new = (
+    "cxx.find_library('\''glslang-default-resource-limits'\'', required: false, "
+    f"static: true, dirs: ['\''{libdir}'\''])"
+)
+if old not in text:
+    sys.exit("libplacebo glsl/meson.build glslang lookup changed; cannot inject dirs")
+path.write_text(text.replace(old, new, 1))
+' "$f" "$libdir"
+}
+
 build_libplacebo() {
   is_stamped libplacebo && { log "skip libplacebo"; return; }
   log "building libplacebo"
   need_cmd python3
+  _install_shaderc_glslang_headers "$WORK_DIR/build/$TARGET_ID/shaderc"
+  _libplacebo_glslang_meson
   python3 -c 'import jinja2' >/dev/null 2>&1 \
     || die "Python Jinja2 is required to build libplacebo (apt: python3-jinja2 / pip: jinja2)"
 
@@ -883,6 +963,7 @@ build_libplacebo() {
     -Dtests=false
     -Dvulkan=enabled
     -Dvk-proc-addr=enabled
+    -Dvulkan-sdk="$PREFIX"
     -Dshaderc=enabled
     -Dglslang=enabled
     -Dopengl=enabled

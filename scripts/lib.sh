@@ -342,7 +342,17 @@ ensure_rust() {
   rustup target add "$rt"
   if ! command -v cargo-cinstall >/dev/null 2>&1; then
     log "installing cargo-c (libdovi C API)"
-    cargo install cargo-c --locked
+    # cargo-c is a host binary (openssl-sys). Android/Windows set
+    # PKG_CONFIG_LIBDIR to the target prefix, which hides libssl-dev.
+    (
+      unset PKG_CONFIG_LIBDIR PKG_CONFIG_SYSROOT_DIR || true
+      if [[ -n "${_PREBUILD_BASE_PKG_CONFIG_PATH:-}" ]]; then
+        export PKG_CONFIG_PATH="$_PREBUILD_BASE_PKG_CONFIG_PATH"
+      else
+        unset PKG_CONFIG_PATH || true
+      fi
+      cargo install cargo-c --locked
+    )
   fi
 }
 
