@@ -629,6 +629,30 @@ if "mpv-prebuild-skip-export" not in t2:
         sys.exit("failed to skip VulkanLoaderConfig export")
 if t2 != t:
     p.write_text(t2)
+# Static libvulkan is linked into libmpv-2.dll, which already has DllMain
+# (w32_common.c). Keep PROCESS_ATTACH init via a constructor.
+win = p.parent / "loader_windows.c"
+if win.is_file():
+    w = win.read_text()
+    if "mpv-prebuild-no-dllmain" not in w:
+        needle = "BOOL WINAPI DllMain(HINSTANCE hinst, DWORD reason, LPVOID reserved)"
+        if needle not in w:
+            sys.exit("Vulkan-Loader DllMain not found")
+        w = w.replace(
+            needle,
+            """/* mpv-prebuild-no-dllmain: static libvulkan is linked into libmpv-2.dll */
+__attribute__((used, constructor))
+static void mpv_prebuild_vulkan_loader_ctor(void) {
+    loader_platform_thread_create_mutex(&loader_lock);
+    loader_platform_thread_create_mutex(&loader_preload_icd_lock);
+    loader_platform_thread_create_mutex(&loader_global_instance_list_lock);
+    init_global_loader_settings();
+}
+
+static BOOL WINAPI __attribute__((unused)) mpv_prebuild_unused_DllMain(HINSTANCE hinst, DWORD reason, LPVOID reserved)""",
+            1,
+        )
+        win.write_text(w)
 PY
 }
 
@@ -790,9 +814,9 @@ build_spirv_cross() {
     -DSPIRV_CROSS_ENABLE_REFLECT=ON \
     -DSPIRV_CROSS_ENABLE_UTIL=ON
   # Headers install to include/spirv_cross/; libplacebo includes <spirv_cross_c.h>.
-  # -lc++: static C++ archives linked into C libplacebo (llvm-mingw libc++).
+  # Do not add -lc++: shaderc.pc already links llvm-mingw libc++.a once.
   write_pc spirv-cross-c-shared 0.67.0 \
-    "-lspirv-cross-c -lspirv-cross-glsl -lspirv-cross-hlsl -lspirv-cross-msl -lspirv-cross-cpp -lspirv-cross-reflect -lspirv-cross-util -lspirv-cross-core -lc++" \
+    "-lspirv-cross-c -lspirv-cross-glsl -lspirv-cross-hlsl -lspirv-cross-msl -lspirv-cross-cpp -lspirv-cross-reflect -lspirv-cross-util -lspirv-cross-core" \
     '-I${includedir}/spirv_cross'
   stamp spirv-cross
 }
@@ -859,6 +883,10 @@ build_shaderc() {
   local cxxlib=-lstdc++
   case "$OS" in
     linux) cxxlib=-lstdc++ ;;
+    windows)
+      [[ -n "${WINDOWS_LIBCXX_LIBS:-}" ]] || die "WINDOWS_LIBCXX_LIBS unset"
+      cxxlib="$WINDOWS_LIBCXX_LIBS"
+      ;;
     *) cxxlib=-lc++ ;;
   esac
   local pc_libs
@@ -1026,11 +1054,47 @@ build_libplacebo() {
   stamp libplacebo
 }
 
+# Drop -lc++ / -lstdc++ from pkg-config so meson --prefer-static cannot mix
+# libc++.a with libc++.dll.a. Windows libc++ archives live in shaderc.pc.
+_windows_strip_pc_libcxx_flags() {
+  [[ "$OS" == windows ]] || return 0
+  local pc
+  for pc in "$PREFIX/lib/pkgconfig"/*.pc; do
+    [[ -f "$pc" ]] || continue
+    python3 - "$pc" <<'PY'
+from pathlib import Path
+import re
+import sys
+p = Path(sys.argv[1])
+t = p.read_text()
+t2 = re.sub(r"(?<!\S)-l(?:c\+\+|stdc\+\+)\s*", "", t)
+if t2 != t:
+    p.write_text(t2)
+PY
+  done
+  pc="$PREFIX/lib/pkgconfig/shaderc.pc"
+  if [[ -f "$pc" && -n "${WINDOWS_LIBCXX_LIBS:-}" ]] && ! grep -q 'libc++\.a' "$pc"; then
+    python3 - "$pc" "$WINDOWS_LIBCXX_LIBS" <<'PY'
+from pathlib import Path
+import sys
+p = Path(sys.argv[1])
+extra = sys.argv[2]
+lines = []
+for line in p.read_text().splitlines(True):
+    if line.startswith("Libs:"):
+        line = line.rstrip("\n") + " " + extra + "\n"
+    lines.append(line)
+p.write_text("".join(lines))
+PY
+  fi
+}
+
 build_mpv() {
   is_stamped mpv && { log "skip mpv"; return; }
   log "building mpv"
   _mpv_iconv_meson
   _mpv_pipewire_compat
+  _windows_strip_pc_libcxx_flags
   local bdir="$WORK_DIR/build/$TARGET_ID/mpv"
   rm -rf "$bdir"
 

@@ -83,6 +83,7 @@ setup_target() {
 
   _write_meson_cross
   _write_cmake_toolchain
+  export MESON_CROSS MESON_NATIVE
   log "target $TARGET_ID cc=$CC prefix=$PREFIX"
 }
 
@@ -250,6 +251,23 @@ _find_llvm_mingw() {
   die "llvm-mingw not found. Set LLVM_MINGW_HOME or install x86_64-w64-mingw32-clang."
 }
 
+# Archive paths for llvm-mingw libc++. Do not use -lc++: meson --prefer-static
+# resolves it to libc++.a while clang still injects libc++.dll.a.
+_windows_libcxx_archives() {
+  local root="$1" syslib=""
+  if [[ -f "$root/$TRIPLE/lib/libc++.a" ]]; then
+    syslib="$root/$TRIPLE/lib"
+  elif [[ -f "$root/lib/libc++.a" ]]; then
+    syslib="$root/lib"
+  else
+    die "llvm-mingw libc++.a not found under $root (tried $TRIPLE/lib and lib)"
+  fi
+  [[ -f "$syslib/libc++abi.a" ]] || die "llvm-mingw libc++abi.a not found in $syslib"
+  local libs=("$syslib/libc++.a" "$syslib/libc++abi.a")
+  [[ -f "$syslib/libunwind.a" ]] && libs+=("$syslib/libunwind.a")
+  printf '%s' "-Wl,--start-group ${libs[*]} -Wl,--end-group"
+}
+
 _setup_windows() {
   local root
   root=$(_find_llvm_mingw)
@@ -282,7 +300,10 @@ _setup_windows() {
   CMAKE_TOOLCHAIN_FILE=""
   HOST_TRIPLE="$TRIPLE"
   ABI="$ARCH"
-  LDFLAGS_EXTRA+=(-static-libstdc++ -static-libgcc)
+  # clang/libc++; -static-libstdc++ is ignored. Keep libc++ out of LDFLAGS so
+  # clang++ configure tests do not also pull libc++.dll.a.
+  WINDOWS_LIBCXX_LIBS=$(_windows_libcxx_archives "$root")
+  export WINDOWS_LIBCXX_LIBS
 }
 
 _xcode_app() {
@@ -457,16 +478,30 @@ EOF
 # generators such as fribidi gen.tab). Distinct from the host/cross toolchain.
 _write_meson_native_for_build() {
   local cc cxx ar ranlib nm strip pc
+  local native_c native_cpp native_objc native_objcpp
   if [[ "$(uname -s)" == Darwin ]]; then
     local xcode toolchain
     xcode=$(_xcode_app)
     toolchain="$xcode/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin"
-    cc="$toolchain/clang"
+    cc="${HOST_CC:-$toolchain/clang}"
     cxx="$toolchain/clang++"
     ar="$toolchain/ar"
     ranlib="$toolchain/ranlib"
     nm="$toolchain/nm"
     strip="$toolchain/strip"
+    # Xcode toolchain clang does not find macOS headers without an SDK
+    # (unlike /usr/bin/clang). Meson 1.12 then reports no build-machine C
+    # compiler, and fribidi gen.tab fails on arm64→x86_64.
+    local -a host_flags=()
+    if [[ -n "${HOST_CFLAGS:-}" ]]; then
+      # HOST_CFLAGS is space-separated; SDK paths have no spaces.
+      # shellcheck disable=SC2206
+      host_flags=(${HOST_CFLAGS})
+    fi
+    native_c=$(meson_array "$cc" "${host_flags[@]+"${host_flags[@]}"}")
+    native_cpp=$(meson_array "$cxx" "${host_flags[@]+"${host_flags[@]}"}")
+    native_objc="$native_c"
+    native_objcpp="$native_cpp"
   else
     cc=$(command -v gcc || true)
     cxx=$(command -v g++ || true)
@@ -480,16 +515,20 @@ _write_meson_native_for_build() {
     nm=$(command -v gcc-nm || command -v nm)
     strip=$(command -v strip)
     [[ -n "$ar" && -n "$ranlib" && -n "$nm" && -n "$strip" ]] || die "build-machine binutils not found"
+    native_c="'$cc'"
+    native_cpp="'$cxx'"
+    native_objc="'$cc'"
+    native_objcpp="'$cxx'"
   fi
   pc="${PKG_CONFIG:-$(command -v pkg-config)}"
   [[ -n "$pc" ]] || die "pkg-config not found for Meson native file"
   MESON_NATIVE="$TOOL_DIR/meson-native.ini"
   cat >"$MESON_NATIVE" <<EOF
 [binaries]
-c = '$cc'
-cpp = '$cxx'
-objc = '$cc'
-objcpp = '$cxx'
+c = $native_c
+cpp = $native_cpp
+objc = $native_objc
+objcpp = $native_objcpp
 ar = '$ar'
 nm = '$nm'
 strip = '$strip'
