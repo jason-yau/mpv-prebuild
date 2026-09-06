@@ -1203,6 +1203,12 @@ build_mpv() {
         -Dcoreaudio=disabled
         -Davfoundation=disabled
         -Dios-gl=enabled
+        # videotoolbox-gl auto-enables when ios-gl is on, then meson compiles
+        # hwdec_mac_gl.c (IOSurface / CGL). That file is macOS-only; iOS GLES
+        # interop is hwdec_ios_gl.m, which needs HAVE_VIDEOTOOLBOX_GL off so
+        # struct priv has CVOpenGLESTextureCacheRef instead of GLuint planes.
+        -Dvideotoolbox-gl=disabled
+        -Dgl-cocoa=disabled
         -Dcocoa=disabled
         -Dswift-build=disabled
       )

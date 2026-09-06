@@ -378,7 +378,7 @@ _setup_darwin() {
   LDFLAGS_EXTRA+=(-liconv)
   # mpv 0.41 audiounit.m uses AVAudioSession; meson only links Foundation+AudioToolbox.
   if [[ "$OS" == ios || "$OS" == iossimulator ]]; then
-    LDFLAGS_EXTRA+=(-framework AVFoundation)
+    LDFLAGS_EXTRA+=(-framework AVFoundation -framework OpenGLES)
   fi
   export DEVELOPER_DIR="$xcode/Contents/Developer"
 
