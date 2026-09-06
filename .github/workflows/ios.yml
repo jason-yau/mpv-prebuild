@@ -1,4 +1,4 @@
-name: Darwin
+name: iOS
 
 on:
   workflow_call:
@@ -7,20 +7,20 @@ on:
         type: string
         required: false
         default: ""
-      target:
+      arch:
         type: string
         required: false
-        default: "macos-universal"
+        default: "arm64"
   workflow_dispatch:
     inputs:
       version:
         type: string
         required: false
         default: ""
-      target:
+      arch:
         type: choice
-        default: macos-universal
-        options: [macos-universal, macos-arm64, ios-arm64]
+        default: arm64
+        options: [arm64, simulator-arm64, simulator-x86_64, all]
 
 jobs:
   build:
@@ -63,17 +63,37 @@ jobs:
 
       - name: Build
         run: |
-          case "${{ inputs.target }}" in
-            macos-universal) bash ./scripts/build.sh --os macos --arch universal --flavor all ;;
-            macos-arm64)     bash ./scripts/build.sh --os macos --arch arm64 --flavor all ;;
-            ios-arm64)       bash ./scripts/build.sh --os ios --arch arm64 --flavor all ;;
-            *) echo "unknown target ${{ inputs.target }}" >&2; exit 1 ;;
+          set -euo pipefail
+          v="${VERSION:-}"
+          if [ -z "$v" ]; then
+            v="$(date -u +%Y%m%d%H%M%S)"
+          fi
+          export VERSION="$v"
+          echo "VERSION=$v" >> "$GITHUB_ENV"
+          case "${{ inputs.arch }}" in
+            arm64)
+              bash ./scripts/build.sh --os ios --arch arm64 --flavor all
+              ;;
+            simulator-arm64)
+              bash ./scripts/build.sh --os iossimulator --arch arm64 --flavor all
+              ;;
+            simulator-x86_64)
+              bash ./scripts/build.sh --os iossimulator --arch x86_64 --flavor all
+              ;;
+            all)
+              bash ./scripts/build.sh --os ios --arch arm64 --flavor all
+              bash ./scripts/build.sh --os iossimulator --arch arm64 --flavor all
+              ;;
+            *)
+              echo "unknown ios arch ${{ inputs.arch }}" >&2
+              exit 1
+              ;;
           esac
 
       - name: Upload
         uses: actions/upload-artifact@v6
         with:
-          name: libmpv-${{ inputs.target }}
+          name: libmpv-ios-${{ inputs.arch }}
           path: dist/*.tar.gz
           if-no-files-found: error
           retention-days: 30

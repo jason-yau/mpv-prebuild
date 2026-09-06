@@ -17,6 +17,8 @@ on:
           - all
           - windows
           - android
+          - macos
+          - ios
           - darwin
           - linux
           - ubuntu
@@ -31,21 +33,29 @@ on:
       android_arch:
         description: Android architecture
         type: choice
-        default: all
+        default: arm64
         options:
           - all
           - arm64
           - armv7
           - x86
           - x86_64
-      darwin_target:
-        description: Apple target
+      macos_arch:
+        description: macOS architecture
         type: choice
-        default: macos-universal
+        default: universal
         options:
-          - macos-universal
-          - macos-arm64
-          - ios-arm64
+          - universal
+          - arm64
+      ios_arch:
+        description: iOS architecture (arm64 = device)
+        type: choice
+        default: arm64
+        options:
+          - arm64
+          - simulator-arm64
+          - simulator-x86_64
+          - all
       linux_arch:
         description: Linux architecture
         type: choice
@@ -116,16 +126,29 @@ jobs:
       version: ${{ needs.version.outputs.version }}
       arch: ${{ github.event_name == 'push' && 'all' || inputs.android_arch }}
 
-  darwin:
+  macos:
     needs: [version]
     if: >-
       github.event_name == 'push' ||
       inputs.platforms == 'all' ||
+      inputs.platforms == 'macos' ||
       inputs.platforms == 'darwin'
-    uses: ./.github/workflows/darwin.yml
+    uses: ./.github/workflows/macos.yml
     with:
       version: ${{ needs.version.outputs.version }}
-      target: ${{ github.event_name == 'push' && 'macos-universal' || inputs.darwin_target }}
+      arch: ${{ github.event_name == 'push' && 'universal' || inputs.macos_arch }}
+
+  ios:
+    needs: [version]
+    if: >-
+      github.event_name == 'push' ||
+      inputs.platforms == 'all' ||
+      inputs.platforms == 'ios' ||
+      inputs.platforms == 'darwin'
+    uses: ./.github/workflows/ios.yml
+    with:
+      version: ${{ needs.version.outputs.version }}
+      arch: ${{ github.event_name == 'push' && 'arm64' || inputs.ios_arch }}
 
   linux:
     needs: [version]
@@ -140,7 +163,7 @@ jobs:
       arch: ${{ github.event_name == 'push' && 'all' || inputs.linux_arch }}
 
   release:
-    needs: [version, windows, android, darwin, linux]
+    needs: [version, windows, android, macos, ios, linux]
     if: >-
       always() &&
       !cancelled() &&
@@ -148,11 +171,13 @@ jobs:
       (github.event_name == 'push' || inputs.publish) &&
       (needs.windows.result == 'success' || needs.windows.result == 'skipped') &&
       (needs.android.result == 'success' || needs.android.result == 'skipped') &&
-      (needs.darwin.result == 'success' || needs.darwin.result == 'skipped') &&
+      (needs.macos.result == 'success' || needs.macos.result == 'skipped') &&
+      (needs.ios.result == 'success' || needs.ios.result == 'skipped') &&
       (needs.linux.result == 'success' || needs.linux.result == 'skipped') &&
       (needs.windows.result == 'success' ||
        needs.android.result == 'success' ||
-       needs.darwin.result == 'success' ||
+       needs.macos.result == 'success' ||
+       needs.ios.result == 'success' ||
        needs.linux.result == 'success')
     runs-on: ubuntu-latest
     steps:

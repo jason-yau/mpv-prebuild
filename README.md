@@ -32,6 +32,7 @@ libmpv-<mpv-version>-<os>-<arch>-<flavor>-<version>/
 | Linux | `libmpv-0.41.0-linux-x86_64-lgpl-*.tar.gz` / `*-gpl-*.tar.gz` | Native Ubuntu `libmpv.so` (arm64 as well) |
 | macOS | `libmpv-0.41.0-macos-universal-lgpl-*.tar.gz` / `*-gpl-*.tar.gz` | `lipo`'d `libmpv*.dylib` |
 | iOS | `libmpv-0.41.0-ios-arm64-lgpl-*.tar.gz` / `*-gpl-*.tar.gz` | Device arm64 dylib |
+| iOS Simulator | `libmpv-0.41.0-iossimulator-arm64-lgpl-*.tar.gz` / `*-gpl-*.tar.gz` | Simulator arm64 (x86_64 also available) |
 
 Versions are pinned in `config/versions.env` (currently mpv 0.41.0 + FFmpeg 9.0.1).
 
@@ -44,7 +45,8 @@ You can also run a platform workflow on its own:
 - [Windows](.github/workflows/windows.yml) (`ubuntu-22.04` + llvm-mingw)
 - [Android](.github/workflows/android.yml) (`ubuntu-22.04` + NDK r29)
 - [Linux](.github/workflows/linux.yml) (`ubuntu-22.04` x86_64 / `ubuntu-22.04-arm` arm64)
-- [Darwin](.github/workflows/darwin.yml) (`macos-15` + Xcode)
+- [macOS](.github/workflows/macos.yml) (`macos-15` + Xcode)
+- [iOS](.github/workflows/ios.yml) (`macos-15` + Xcode)
 
 ## Local builds
 
@@ -67,6 +69,7 @@ bash ./scripts/build.sh --os linux --arch x86_64
 # macOS / iOS (macOS host only)
 bash ./scripts/build.sh --os macos --arch universal
 bash ./scripts/build.sh --os ios --arch arm64 --flavor all
+bash ./scripts/build.sh --os iossimulator --arch arm64
 ```
 
 `make android` / `make windows` / `make macos` / `make ios` / `make linux` are aliases for the commands above.

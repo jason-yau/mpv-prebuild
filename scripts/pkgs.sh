@@ -167,7 +167,21 @@ build_uchardet() {
   log "building uchardet"
   run_cmake "$SRC_DIR/uchardet" \
     -DBUILD_BINARY=OFF \
-    -DBUILD_SHARED_LIBS=OFF
+    -DBUILD_SHARED_LIBS=OFF \
+    -DBUILD_STATIC=ON
+  # cmake installs include/uchardet/uchardet.h; mpv includes <uchardet.h>.
+  # Meson --prefer-static may take the cmake package and drop INSTALL_INTERFACE.
+  local nested="$PREFIX/include/uchardet/uchardet.h"
+  local flat="$PREFIX/include/uchardet.h"
+  [[ -f "$nested" || -f "$flat" ]] || die "uchardet.h was not installed"
+  if [[ -f "$nested" && ! -e "$flat" ]]; then
+    cp -a "$nested" "$flat"
+  fi
+  local libs="-luchardet"
+  case "$OS" in
+    linux) libs="$libs -lstdc++" ;;
+  esac
+  write_pc uchardet "$UCHARDET_VERSION" "$libs" '-I${includedir}/uchardet'
   stamp uchardet
 }
 

@@ -1,0 +1,73 @@
+name: macOS
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        type: string
+        required: false
+        default: ""
+      arch:
+        type: string
+        required: false
+        default: "universal"
+  workflow_dispatch:
+    inputs:
+      version:
+        type: string
+        required: false
+        default: ""
+      arch:
+        type: choice
+        default: universal
+        options: [universal, arm64]
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 360
+    env:
+      VERSION: ${{ inputs.version }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Cache cargo-c
+        uses: actions/cache@v5
+        with:
+          path: |
+            ~/.cargo/bin
+            ~/.cargo/registry
+            ~/.rustup
+          key: rust-c-${{ runner.os }}-${{ runner.arch }}
+
+      - name: Host packages
+        run: |
+          brew install cmake meson ninja pkg-config nasm automake autoconf libtool
+          python3 -m pip install --user jinja2 \
+            || python3 -m pip install --user --break-system-packages jinja2
+
+      - name: Xcode
+        run: |
+          XCODE=$(ls -d /Applications/Xcode*.app | sort -V | tail -n1)
+          echo "XCODE_PATH=$XCODE" >> "$GITHUB_ENV"
+          sudo xcode-select -s "$XCODE/Contents/Developer"
+          xcodebuild -version
+
+      - name: Cache sources
+        uses: actions/cache@v5
+        with:
+          path: |
+            work/download
+            work/src
+          key: src-${{ hashFiles('config/versions.env') }}
+
+      - name: Build
+        run: bash ./scripts/build.sh --os macos --arch "${{ inputs.arch }}" --flavor all
+
+      - name: Upload
+        uses: actions/upload-artifact@v6
+        with:
+          name: libmpv-macos-${{ inputs.arch }}
+          path: dist/*.tar.gz
+          if-no-files-found: error
+          retention-days: 30

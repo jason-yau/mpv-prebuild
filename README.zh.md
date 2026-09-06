@@ -32,6 +32,7 @@ libmpv-<mpv-version>-<os>-<arch>-<flavor>-<version>/
 | Linux | `libmpv-0.41.0-linux-x86_64-lgpl-*.tar.gz` / `*-gpl-*.tar.gz` | Ubuntu 原生 `libmpv.so`（另有 arm64） |
 | macOS | `libmpv-0.41.0-macos-universal-lgpl-*.tar.gz` / `*-gpl-*.tar.gz` | `lipo` 后的 `libmpv*.dylib` |
 | iOS | `libmpv-0.41.0-ios-arm64-lgpl-*.tar.gz` / `*-gpl-*.tar.gz` | 设备 arm64 dylib |
+| iOS 模拟器 | `libmpv-0.41.0-iossimulator-arm64-lgpl-*.tar.gz` / `*-gpl-*.tar.gz` | 模拟器 arm64（也可编 x86_64） |
 
 版本钉在 `config/versions.env`（当前 mpv 0.41.0 + FFmpeg 9.0.1）。
 
@@ -44,7 +45,8 @@ Actions → **Build libmpv** → Run workflow，选择平台。打 `v*` 标签�
 - [Windows](.github/workflows/windows.yml)（`ubuntu-22.04` + llvm-mingw）
 - [Android](.github/workflows/android.yml)（`ubuntu-22.04` + NDK r29）
 - [Linux](.github/workflows/linux.yml)（`ubuntu-22.04` x86_64 / `ubuntu-22.04-arm` arm64）
-- [Darwin](.github/workflows/darwin.yml)（`macos-15` + Xcode）
+- [macOS](.github/workflows/macos.yml)（`macos-15` + Xcode）
+- [iOS](.github/workflows/ios.yml)（`macos-15` + Xcode）
 
 ## 本地编译
 
@@ -67,6 +69,7 @@ bash ./scripts/build.sh --os linux --arch x86_64
 # macOS / iOS（仅 macOS 主机）
 bash ./scripts/build.sh --os macos --arch universal
 bash ./scripts/build.sh --os ios --arch arm64 --flavor all
+bash ./scripts/build.sh --os iossimulator --arch arm64
 ```
 
 `make android` / `make windows` / `make macos` / `make ios` / `make linux` 是上面命令的别名。
