@@ -9,7 +9,7 @@ Each build produces two flavors:
 - **lgpl**: `mpv -Dgpl=false`, FFmpeg without `--enable-gpl` / `--enable-nonfree`. Suitable for closed-source commercial use (you still must follow LGPL).
 - **gpl**: FFmpeg `--enable-gpl --enable-libx264`, mpv `-Dgpl=true`, plus x264. **Distribute the whole package under GPL.**
 
-Dependencies are statically linked into `libmpv` except on Linux, where desktop backends (ALSA, Pulse, X11, Wayland, …) stay as shared libraries and are copied next to `libmpv.so`. Consumers typically need only that flavor's shared library plus headers. Default `--flavor all` builds both. GPU rendering goes through **libplacebo** (mpv 0.41 `vo_gpu_next` / `mpv_render`) with OpenGL, plus D3D11 on Windows (shaderc + SPIRV-Cross). Vulkan is not enabled.
+Dependencies are statically linked into `libmpv` except on Linux, where desktop backends (ALSA, Pulse, X11, Wayland, …) stay as shared libraries and are copied next to `libmpv.so`. Consumers typically need only that flavor's shared library plus headers. Default `--flavor all` builds both. GPU rendering goes through **libplacebo** (mpv 0.41 `vo_gpu_next` / `mpv_render`) with OpenGL, Vulkan (shaderc + glslang; `vk-proc-addr` links the Vulkan loader), plus D3D11 on Windows (SPIRV-Cross). Color management uses **lcms2**. Dolby Vision RPU uses **libdovi**. Cache hashing uses **xxHash**.
 
 ## Artifacts
 
@@ -139,8 +139,15 @@ fribidi
 libass (freetype + harfbuzz + fribidi)
 libiconv                # Windows/Android; Linux and Apple use libc
 uchardet
-shaderc + SPIRV-Cross # Windows (mpv/libplacebo D3D11)
-libplacebo            # OpenGL; Windows also D3D11 (shaderc + SPIRV-Cross)
+lcms2                 # ICC / color management (MIT core; no GPL-3 plugins)
+libdovi               # Dolby Vision RPU (cargo-c)
+shaderc               # GLSL→SPIR-V (Vulkan; also D3D11)
+glslang               # second SPIR-V compiler (from shaderc third_party)
+xxhash                # libplacebo cache hashing
+SPIRV-Cross           # Windows D3D11 (SPIR-V→HLSL)
+vulkan-headers        # Vulkan 1.4 headers
+vulkan-loader         # static loader (Android: NDK libvulkan)
+libplacebo            # OpenGL + Vulkan (vk-proc-addr); Windows also D3D11
 libdisplay-info       # Linux only (mpv DRM / EDID)
 wayland + protocols   # Linux, vendored when distro is older than mpv 0.41
 x264                    # gpl only

@@ -110,6 +110,11 @@ fetch_src ffmpeg     "$FFMPEG_URL"     "${FFMPEG_SHA256:-}"
 fetch_src mpv        "$MPV_URL"        "${MPV_SHA256:-}"
 fetch_src x264       "$X264_URL"       "${X264_SHA256:-}"
 fetch_src libplacebo         "$LIBPLACEBO_URL"           "${LIBPLACEBO_SHA256:-}"
+fetch_src vulkan-headers     "$VULKAN_HEADERS_URL"       "${VULKAN_HEADERS_SHA256:-}"
+fetch_src vulkan-loader      "$VULKAN_LOADER_URL"        "${VULKAN_LOADER_SHA256:-}"
+fetch_src xxhash             "$XXHASH_URL"               "${XXHASH_SHA256:-}"
+fetch_src lcms2              "$LCMS2_URL"                "${LCMS2_SHA256:-}"
+fetch_src libdovi            "$LIBDOVI_URL"              "${LIBDOVI_SHA256:-}"
 fetch_src spirv-cross        "$SPIRV_CROSS_URL"          "${SPIRV_CROSS_SHA256:-}"
 fetch_src shaderc            "$SHADERC_URL"              "${SHADERC_SHA256:-}"
 fetch_src libdisplay-info    "$LIBDISPLAY_INFO_URL"      "${LIBDISPLAY_INFO_SHA256:-}" \
@@ -138,8 +143,9 @@ if [[ ! -f "$SRC_DIR/libplacebo/3rdparty/fast_float/include/fast_float/fast_floa
 fi
 if [[ ! -f "$SRC_DIR/libplacebo/3rdparty/Vulkan-Headers/include/vulkan/vulkan.h" ]]; then
   log "vendoring libplacebo 3rdparty/Vulkan-Headers"
-  fetch vulkan-headers "${VULKAN_HEADERS_SHA256:-}" "$VULKAN_HEADERS_URL"
-  vendor_into "$SRC_DIR/libplacebo/3rdparty/Vulkan-Headers" "$FETCHED_ARCHIVE"
+  rm -rf "$SRC_DIR/libplacebo/3rdparty/Vulkan-Headers"
+  mkdir -p "$SRC_DIR/libplacebo/3rdparty"
+  cp -a "$SRC_DIR/vulkan-headers" "$SRC_DIR/libplacebo/3rdparty/Vulkan-Headers"
 fi
 
 # shaderc release tarball has no git-sync-deps; drop in DEPS pins.

@@ -60,6 +60,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Cache cargo-c
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin
+            ~/.cargo/registry
+            ~/.rustup
+          key: rust-c-${{ runner.os }}-${{ runner.arch }}
+
       - name: Host packages
         run: |
           sudo apt-get update
@@ -74,7 +83,7 @@ jobs:
             libva-dev libvdpau-dev \
             libwayland-dev wayland-protocols libffi-dev \
             libdrm-dev libgbm-dev \
-            libjack-jackd2-dev libsndio-dev patchelf hwdata
+            libjack-jackd2-dev libsndio-dev patchelf hwdata libssl-dev
           if ! meson --version | awk -F. '{exit !($1 > 1 || ($1 == 1 && $2 >= 3))}'; then
             sudo pip3 install --upgrade meson ninja
           fi

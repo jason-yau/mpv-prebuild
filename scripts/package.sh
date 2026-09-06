@@ -155,7 +155,7 @@ EOF
 
   cp "$ROOT_DIR/LICENSE" "$dest/licenses/mpv-prebuild.txt"
   local proj cand
-  for proj in mpv ffmpeg dav1d mbedtls libass libplacebo libiconv libdisplay-info wayland wayland-protocols; do
+  for proj in mpv ffmpeg dav1d mbedtls libass libplacebo libiconv libdisplay-info wayland wayland-protocols lcms2 libdovi vulkan-headers vulkan-loader shaderc xxhash; do
     for cand in COPYING.LIB COPYING LICENSE LICENSE.txt COPYING.LGPLv2.1 COPYING.GPLv2 COPYING.GPLv3; do
       if [[ -f "$SRC_DIR/$proj/$cand" ]]; then
         cp "$SRC_DIR/$proj/$cand" "$dest/licenses/${proj}-${cand}"
@@ -163,29 +163,27 @@ EOF
       fi
     done
   done
-  if [[ "$OS" == windows ]]; then
-    local wproj wdir wname
-    for wproj in spirv-cross shaderc; do
-      for cand in LICENSE LICENSE.txt COPYING COPYING.LIB; do
-        if [[ -f "$SRC_DIR/$wproj/$cand" ]]; then
-          cp "$SRC_DIR/$wproj/$cand" "$dest/licenses/${wproj}-${cand}"
-          break
-        fi
-      done
+  local wdir wname
+  for wdir in \
+    "shaderc/third_party/glslang:glslang" \
+    "shaderc/third_party/spirv-tools:spirv-tools" \
+    "shaderc/third_party/spirv-headers:spirv-headers"
+  do
+    wname="${wdir##*:}"
+    wdir="${wdir%%:*}"
+    for cand in LICENSE LICENSE.txt COPYING; do
+      if [[ -f "$SRC_DIR/$wdir/$cand" ]]; then
+        cp "$SRC_DIR/$wdir/$cand" "$dest/licenses/${wname}-${cand}"
+        break
+      fi
     done
-    for wdir in \
-      "shaderc/third_party/glslang:glslang" \
-      "shaderc/third_party/spirv-tools:spirv-tools" \
-      "shaderc/third_party/spirv-headers:spirv-headers"
-    do
-      wname="${wdir##*:}"
-      wdir="${wdir%%:*}"
-      for cand in LICENSE LICENSE.txt COPYING; do
-        if [[ -f "$SRC_DIR/$wdir/$cand" ]]; then
-          cp "$SRC_DIR/$wdir/$cand" "$dest/licenses/${wname}-${cand}"
-          break
-        fi
-      done
+  done
+  if [[ "$OS" == windows ]]; then
+    for cand in LICENSE LICENSE.txt COPYING COPYING.LIB; do
+      if [[ -f "$SRC_DIR/spirv-cross/$cand" ]]; then
+        cp "$SRC_DIR/spirv-cross/$cand" "$dest/licenses/spirv-cross-${cand}"
+        break
+      fi
     done
   fi
   if is_gpl; then

@@ -31,12 +31,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Cache cargo-c
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin
+            ~/.cargo/registry
+            ~/.rustup
+          key: rust-c-${{ runner.os }}-${{ runner.arch }}
+
       - name: Host packages
         run: |
           sudo apt-get update
           sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
             build-essential cmake pkg-config python3 python3-pip python3-setuptools python3-jinja2 \
-            nasm yasm curl unzip zip ninja-build autoconf automake libtool
+            nasm yasm curl unzip zip ninja-build autoconf automake libtool libssl-dev
           sudo pip3 install --upgrade meson ninja
 
       - name: Android NDK

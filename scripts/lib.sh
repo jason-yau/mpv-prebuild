@@ -54,7 +54,7 @@ ensure_dir() { mkdir -p "$@"; }
 
 require_sources() {
   local name
-  for name in mpv ffmpeg zlib dav1d mbedtls libxml2 libpng freetype harfbuzz fribidi libass uchardet libplacebo; do
+  for name in mpv ffmpeg zlib dav1d mbedtls libxml2 libpng freetype harfbuzz fribidi libass uchardet libplacebo lcms2 libdovi vulkan-headers vulkan-loader shaderc xxhash; do
     if [[ ! -d "$SRC_DIR/$name" || -z "$(ls -A "$SRC_DIR/$name" 2>/dev/null || true)" ]]; then
       die "sources missing ($name); run without --skip-download"
     fi
@@ -68,15 +68,17 @@ require_sources() {
     if [[ ! -d "$SRC_DIR/spirv-cross" || -z "$(ls -A "$SRC_DIR/spirv-cross" 2>/dev/null || true)" ]]; then
       die "sources missing (spirv-cross); run without --skip-download"
     fi
-    [[ -f "$SRC_DIR/shaderc/libshaderc/include/shaderc/shaderc.h" ]] \
-      || die "sources missing (shaderc); run without --skip-download"
-    [[ -f "$SRC_DIR/shaderc/third_party/glslang/CMakeLists.txt" ]] \
-      || die "shaderc third_party/glslang missing; run without --skip-download"
-    [[ -f "$SRC_DIR/shaderc/third_party/spirv-headers/CMakeLists.txt" ]] \
-      || die "shaderc third_party/spirv-headers missing; run without --skip-download"
-    [[ -f "$SRC_DIR/shaderc/third_party/spirv-tools/CMakeLists.txt" ]] \
-      || die "shaderc third_party/spirv-tools missing; run without --skip-download"
   fi
+  [[ -f "$SRC_DIR/shaderc/libshaderc/include/shaderc/shaderc.h" ]] \
+    || die "sources missing (shaderc); run without --skip-download"
+  [[ -f "$SRC_DIR/shaderc/third_party/glslang/CMakeLists.txt" ]] \
+    || die "shaderc third_party/glslang missing; run without --skip-download"
+  [[ -f "$SRC_DIR/shaderc/third_party/spirv-headers/CMakeLists.txt" ]] \
+    || die "shaderc third_party/spirv-headers missing; run without --skip-download"
+  [[ -f "$SRC_DIR/shaderc/third_party/spirv-tools/CMakeLists.txt" ]] \
+    || die "shaderc third_party/spirv-tools missing; run without --skip-download"
+  [[ -f "$SRC_DIR/libdovi/dolby_vision/Cargo.toml" ]] \
+    || die "libdovi dolby_vision missing; run without --skip-download"
   if [[ "${OS:-}" == linux ]]; then
     for name in libdisplay-info wayland wayland-protocols; do
       if [[ ! -d "$SRC_DIR/$name" || -z "$(ls -A "$SRC_DIR/$name" 2>/dev/null || true)" ]]; then
@@ -215,7 +217,7 @@ run_meson() {
 run_cmake() {
   local srcdir="$1"
   shift
-  local builddir="$WORK_DIR/build/$TARGET_ID/$(basename "$srcdir")"
+  local builddir="$WORK_DIR/build/$TARGET_ID/${CMAKE_BUILD_NAME:-$(basename "$srcdir")}"
   ensure_dir "$builddir"
   local args=(
     -S "$srcdir"
@@ -301,6 +303,56 @@ Version: $version
 Libs: -L\${libdir} $libs
 Cflags: -I\${includedir}${extra_cflags:+ $extra_cflags}
 EOF
+}
+
+# Rust triple for cargo-c (libdovi). llvm-mingw uses the gnullvm targets.
+rust_triple() {
+  case "${OS:-}-${ARCH:-}" in
+    linux-x86_64) printf '%s\n' x86_64-unknown-linux-gnu ;;
+    linux-arm64) printf '%s\n' aarch64-unknown-linux-gnu ;;
+    windows-x86_64) printf '%s\n' x86_64-pc-windows-gnullvm ;;
+    windows-arm64) printf '%s\n' aarch64-pc-windows-gnullvm ;;
+    windows-x86) printf '%s\n' i686-pc-windows-gnullvm ;;
+    android-arm64) printf '%s\n' aarch64-linux-android ;;
+    android-armv7) printf '%s\n' armv7-linux-androideabi ;;
+    android-x86) printf '%s\n' i686-linux-android ;;
+    android-x86_64) printf '%s\n' x86_64-linux-android ;;
+    macos-arm64) printf '%s\n' aarch64-apple-darwin ;;
+    macos-x86_64) printf '%s\n' x86_64-apple-darwin ;;
+    ios-arm64) printf '%s\n' aarch64-apple-ios ;;
+    iossimulator-arm64) printf '%s\n' aarch64-apple-ios-sim ;;
+    iossimulator-x86_64) printf '%s\n' x86_64-apple-ios ;;
+    *) die "no rust target for ${OS:-?}-${ARCH:-?}" ;;
+  esac
+}
+
+ensure_rust() {
+  export PATH="${HOME:-/tmp}/.cargo/bin:$PATH"
+  if ! command -v rustc >/dev/null 2>&1 || ! command -v cargo >/dev/null 2>&1; then
+    need_cmd curl
+    log "installing rustup (minimal stable)"
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable
+  fi
+  export PATH="${HOME:-/tmp}/.cargo/bin:$PATH"
+  need_cmd rustc
+  need_cmd cargo
+  need_cmd rustup
+  local rt
+  rt=$(rust_triple)
+  rustup target add "$rt"
+  if ! command -v cargo-cinstall >/dev/null 2>&1; then
+    log "installing cargo-c (libdovi C API)"
+    cargo install cargo-c --locked
+  fi
+}
+
+# CARGO_TARGET_<TRIPLE>_LINKER / _AR for cargo-c cross.
+cargo_target_env() {
+  local rt key
+  rt=$(rust_triple)
+  key=$(printf '%s' "$rt" | tr 'abcdefghijklmnopqrstuvwxyz-' 'ABCDEFGHIJKLMNOPQRSTUVWXYZ_')
+  export "CARGO_TARGET_${key}_LINKER=$CC"
+  [[ -n "${AR:-}" ]] && export "CARGO_TARGET_${key}_AR=$AR"
 }
 
 # Load pins in the shell that sourced this file (top-level `eval`, not only a

@@ -401,7 +401,7 @@ build_ffmpeg() {
         --enable-jni
         --enable-mediacodec
         --enable-hwaccels
-        --disable-vulkan
+        --enable-vulkan
         --disable-xlib
       )
       [[ "$ARCH" == armv7 || "$ARCH" == arm64 ]] && cfg+=(--enable-neon)
@@ -412,7 +412,7 @@ build_ffmpeg() {
         --enable-d3d11va
         --enable-dxva2
         --enable-hwaccels
-        --disable-vulkan
+        --enable-vulkan
         --extra-libs='-lws2_32 -lbcrypt -lcrypt32'
       )
       ;;
@@ -421,7 +421,7 @@ build_ffmpeg() {
         --enable-videotoolbox
         --enable-audiotoolbox
         --enable-hwaccels
-        --disable-vulkan
+        --enable-vulkan
         --as="$WORK_DIR/bin/gas-preprocessor.pl -arch ${CLANG_ARCH:-$ARCH} -- $CC"
       )
       export PATH="$WORK_DIR/bin:$PATH"
@@ -432,7 +432,7 @@ build_ffmpeg() {
         --enable-vdpau
         --enable-libdrm
         --enable-hwaccels
-        --disable-vulkan
+        --enable-vulkan
         --disable-xlib
         --disable-libxcb
         --extra-libs='-lm -lpthread -ldl'
@@ -506,6 +506,167 @@ build_wayland() {
   stamp wayland
 }
 
+build_vulkan_headers() {
+  is_stamped vulkan-headers && { log "skip vulkan-headers"; return; }
+  log "installing vulkan-headers"
+  run_cmake "$SRC_DIR/vulkan-headers"
+  stamp vulkan-headers
+}
+
+# Vulkan-Loader hardcodes SHARED except APPLE_STATIC_LOADER. Force STATIC so
+# libmpv does not DT_NEEDED vulkan-1.dll / libvulkan.so.1 (ICD still dlopen'd).
+_force_static_vulkan_loader() {
+  local cm="$SRC_DIR/vulkan-loader/loader/CMakeLists.txt"
+  [[ -f "$cm" ]] || die "missing $cm"
+  python3 - "$cm" <<'PY'
+from pathlib import Path
+import re
+import sys
+p = Path(sys.argv[1])
+t = p.read_text()
+if "mpv-prebuild-static-loader" in t:
+    sys.exit(0)
+t2, n = re.subn(
+    r"add_library\(\s*vulkan\s+SHARED\s+\$\{NORMAL_LOADER_SRCS\}\s+"
+    r"\$\{CMAKE_CURRENT_SOURCE_DIR\}/\$\{API_TYPE\}-1\.def\s+"
+    r"\$\{RC_FILE_LOCATION\}\s*\)",
+    "add_library(vulkan STATIC ${NORMAL_LOADER_SRCS}) # mpv-prebuild-static-loader",
+    t,
+    count=1,
+)
+t2 = t2.replace(
+    "add_library(vulkan SHARED)",
+    "add_library(vulkan STATIC) # mpv-prebuild-static-loader",
+)
+if re.search(r"add_library\(\s*vulkan\s+SHARED", t2):
+    sys.exit("Vulkan-Loader vulkan target is still SHARED")
+if t2 == t:
+    sys.exit("failed to patch Vulkan-Loader for a static library")
+p.write_text(t2)
+PY
+}
+
+build_vulkan_loader() {
+  is_stamped vulkan-loader && { log "skip vulkan-loader"; return; }
+  log "building vulkan-loader"
+  need_cmd python3
+
+  local pc_libs="-lvulkan"
+  case "$OS" in
+    android)
+      local ndk vlib
+      ndk="${ANDROID_NDK_HOME:-${ANDROID_NDK_ROOT:-${NDK:-}}}"
+      [[ -n "$ndk" && -d "$ndk" ]] || die "Android NDK not found (need libvulkan.so)"
+      vlib=$(find "$ndk" -path "*/sysroot/usr/lib/${TRIPLE}/*/libvulkan.so" 2>/dev/null | sort -V | tail -n1 || true)
+      [[ -n "$vlib" && -f "$vlib" ]] || die "NDK libvulkan.so not found for $TRIPLE"
+      cp -a "$vlib" "$PREFIX/lib/libvulkan.so"
+      write_pc vulkan "$VULKAN_LOADER_VERSION" "-lvulkan"
+      stamp vulkan-loader
+      return
+      ;;
+    windows)
+      pc_libs="-lvulkan -lcfgmgr32"
+      ;;
+    macos|ios|iossimulator)
+      pc_libs="-lvulkan -lpthread -lm -framework CoreFoundation"
+      ;;
+    linux)
+      pc_libs="-lvulkan -ldl -lpthread -lm"
+      ;;
+  esac
+
+  _force_static_vulkan_loader
+  local cmake_opts=(
+    -DBUILD_TESTS=OFF
+    -DENABLE_WERROR=OFF
+    -DUSE_GAS=OFF
+    -DUSE_MASM=OFF
+    -DLOADER_CODEGEN=OFF
+    -DVULKAN_HEADERS_INSTALL_DIR="$PREFIX"
+  )
+  case "$OS" in
+    macos|ios|iossimulator) cmake_opts+=(-DAPPLE_STATIC_LOADER=ON) ;;
+    linux)
+      cmake_opts+=(
+        -DBUILD_WSI_XCB_SUPPORT=ON
+        -DBUILD_WSI_XLIB_SUPPORT=ON
+        -DBUILD_WSI_WAYLAND_SUPPORT=ON
+        -DBUILD_WSI_DIRECTFB_SUPPORT=OFF
+      )
+      ;;
+  esac
+
+  CMAKE_BUILD_TARGET=vulkan CMAKE_SKIP_INSTALL=1 \
+    run_cmake "$SRC_DIR/vulkan-loader" "${cmake_opts[@]}"
+
+  local bdir="$WORK_DIR/build/$TARGET_ID/vulkan-loader"
+  local lib
+  lib=$(find "$bdir" \( -name 'libvulkan.a' -o -name 'libvulkan-1.a' \) | head -n1 || true)
+  [[ -n "$lib" && -f "$lib" ]] || die "static libvulkan was not built"
+  cp -a "$lib" "$PREFIX/lib/libvulkan.a"
+  write_pc vulkan "$VULKAN_LOADER_VERSION" "$pc_libs"
+  stamp vulkan-loader
+}
+
+build_xxhash() {
+  is_stamped xxhash && { log "skip xxhash"; return; }
+  log "building xxhash"
+  CMAKE_BUILD_NAME=xxhash run_cmake "$SRC_DIR/xxhash/cmake_unofficial" \
+    -DXXHASH_BUILD_XXHSUM=OFF \
+    -DXXHASH_BUILD_ENABLE_INLINE_API=ON \
+    -DDISPATCH=OFF
+  # libplacebo looks up pkg-config name libxxhash (headers are inlined at compile).
+  write_pc libxxhash "$XXHASH_VERSION" "-lxxhash"
+  stamp xxhash
+}
+
+build_lcms2() {
+  is_stamped lcms2 && { log "skip lcms2"; return; }
+  log "building lcms2"
+  local bdir="$WORK_DIR/build/$TARGET_ID/lcms2"
+  rm -rf "$bdir"
+  # fastfloat/threaded plugins are GPL-3; keep MIT core only.
+  run_meson "$bdir" "$SRC_DIR/lcms2" \
+    -Ddefault_library=static \
+    -Dutils=false \
+    -Dtests=disabled \
+    -Djpeg=disabled \
+    -Dtiff=disabled \
+    -Dfastfloat=false \
+    -Dthreaded=false
+  stamp lcms2
+}
+
+build_libdovi() {
+  is_stamped libdovi && { log "skip libdovi"; return; }
+  log "building libdovi"
+  ensure_rust
+  cargo_target_env
+  local rt src saved_ios=0
+  rt=$(rust_triple)
+  src="$SRC_DIR/libdovi/dolby_vision"
+  [[ -f "$src/Cargo.toml" ]] || die "missing $src/Cargo.toml"
+
+  # Do not leak IPHONEOS_DEPLOYMENT_TARGET into FFmpeg HOSTCC (ops_asmgen).
+  if [[ "$OS" == ios || "$OS" == iossimulator ]]; then
+    export IPHONEOS_DEPLOYMENT_TARGET="${CMAKE_OSX_DEPLOYMENT_TARGET:-12.0}"
+    export SDKROOT="${CMAKE_OSX_SYSROOT:-}"
+    saved_ios=1
+  fi
+
+  (
+    cd "$src"
+    cargo cinstall --release --library-type staticlib \
+      --prefix "$PREFIX" --libdir "$PREFIX/lib" \
+      --target "$rt"
+  )
+  if [[ "$saved_ios" -eq 1 ]]; then
+    unset IPHONEOS_DEPLOYMENT_TARGET
+  fi
+  [[ -f "$PREFIX/lib/pkgconfig/dovi.pc" ]] || die "libdovi did not install dovi.pc"
+  stamp libdovi
+}
+
 build_spirv_cross() {
   [[ "$OS" == windows ]] || return 0
   is_stamped spirv-cross && { log "skip spirv-cross"; return; }
@@ -531,16 +692,17 @@ build_spirv_cross() {
 }
 
 build_shaderc() {
-  [[ "$OS" == windows ]] || return 0
   is_stamped shaderc && { log "skip shaderc"; return; }
   log "building shaderc"
   need_cmd python3
   local py
   py=$(command -v python3)
 
-  # Combined static archive only (skip shared/glslc install).
+  # shaderc_combined pulls glslang + SPIRV-Tools. CMAKE_SKIP_INSTALL_RULES:
+  # otherwise glslang install(EXPORT) requires SPIRV-Tools-opt in an export set.
   CMAKE_SKIP_INSTALL=1 CMAKE_BUILD_TARGET=shaderc_combined \
     run_cmake "$SRC_DIR/shaderc" \
+      -DCMAKE_SKIP_INSTALL_RULES=ON \
       -DSHADERC_SKIP_TESTS=ON \
       -DSHADERC_SKIP_EXAMPLES=ON \
       -DSHADERC_SKIP_EXECUTABLES=ON \
@@ -552,6 +714,9 @@ build_shaderc() {
       -DSPIRV_SKIP_TESTS=ON \
       -DSPIRV_WERROR=OFF \
       -DENABLE_GLSLANG_BINARIES=OFF \
+      -DENABLE_GLSLANG_INSTALL=OFF \
+      -DGLSLANG_ENABLE_INSTALL=OFF \
+      -DSKIP_GLSLANG_INSTALL=ON \
       -DSPIRV_TOOLS_BUILD_STATIC=ON \
       -DSPIRV_TOOLS_LIBRARY_TYPE=STATIC \
       -DPython_EXECUTABLE="$py" \
@@ -566,10 +731,72 @@ build_shaderc() {
   cp -a "$lib" "$PREFIX/lib/libshaderc_combined.a"
   ensure_dir "$PREFIX/include/shaderc"
   cp -a "$SRC_DIR/shaderc/libshaderc/include/shaderc/." "$PREFIX/include/shaderc/"
-  # Upstream shaderc.pc points at libshaderc_shared; mpv/libplacebo want 'shaderc'.
-  # -lc++: C++ archives linked into C libplacebo / libmpv (llvm-mingw libc++).
-  write_pc shaderc "$SHADERC_VERSION" "-lshaderc_combined -lc++"
+
+  # Install the same glslang/SPIRV-Tools archives shaderc just built so
+  # libplacebo -Dglslang can find_library them without a second compile.
+  # shaderc.pc lists the pieces (not shaderc_combined) to avoid duplicate
+  # symbols when both shaderc and glslang are linked into libmpv.
+  _install_shaderc_glslang_libs "$bdir"
+
+  local cxxlib=-lstdc++
+  case "$OS" in
+    linux) cxxlib=-lstdc++ ;;
+    *) cxxlib=-lc++ ;;
+  esac
+  local pc_libs
+  pc_libs="$(_shaderc_pc_libs) $cxxlib"
+  write_pc shaderc "$SHADERC_VERSION" "$pc_libs"
   stamp shaderc
+}
+
+# Copy one libNAME.a from the shaderc build tree into PREFIX/lib.
+_copy_shaderc_lib() {
+  local bdir="$1" name="$2"
+  local f
+  f=$(find "$bdir" -name "lib${name}.a" | head -n1 || true)
+  if [[ -n "$f" && -f "$f" ]]; then
+    cp -a "$f" "$PREFIX/lib/lib${name}.a"
+    return 0
+  fi
+  return 1
+}
+
+_install_shaderc_glslang_libs() {
+  local bdir="$1"
+  local gsrc="$SRC_DIR/shaderc/third_party/glslang"
+  local name bi
+
+  _copy_shaderc_lib "$bdir" shaderc || die "libshaderc.a was not built"
+  _copy_shaderc_lib "$bdir" shaderc_util || die "libshaderc_util.a was not built"
+  for name in \
+      glslang-default-resource-limits glslang MachineIndependent GenericCodeGen \
+      OSDependent OGLCompiler SPIRV SPVRemapper SPIRV-Tools-opt SPIRV-Tools
+  do
+    _copy_shaderc_lib "$bdir" "$name" || true
+  done
+  [[ -f "$PREFIX/lib/libglslang.a" ]] || die "libglslang.a was not built"
+  [[ -f "$PREFIX/lib/libSPIRV.a" ]] || die "libSPIRV.a was not built"
+
+  ensure_dir "$PREFIX/include/glslang"
+  cp -a "$gsrc/glslang/Public" "$PREFIX/include/glslang/"
+  cp -a "$gsrc/glslang/Include" "$PREFIX/include/glslang/"
+  cp -a "$gsrc/SPIRV" "$PREFIX/include/glslang/SPIRV"
+  bi=$(find "$bdir" -path '*glslang*' -name build_info.h | head -n1 || true)
+  [[ -n "$bi" && -f "$bi" ]] || die "glslang build_info.h was not generated"
+  cp -a "$bi" "$PREFIX/include/glslang/build_info.h"
+}
+
+_shaderc_pc_libs() {
+  local name
+  local libs="-lshaderc"
+  [[ -f "$PREFIX/lib/libshaderc_util.a" ]] && libs="$libs -lshaderc_util"
+  for name in \
+      glslang-default-resource-limits glslang MachineIndependent GenericCodeGen \
+      OSDependent OGLCompiler SPIRV SPVRemapper SPIRV-Tools-opt SPIRV-Tools
+  do
+    [[ -f "$PREFIX/lib/lib${name}.a" ]] && libs="$libs -l${name}"
+  done
+  printf '%s' "$libs"
 }
 
 build_libplacebo() {
@@ -586,19 +813,21 @@ build_libplacebo() {
     -Ddefault_library=static
     -Ddemos=false
     -Dtests=false
-    -Dvulkan=disabled
-    -Dvk-proc-addr=disabled
-    -Dglslang=disabled
+    -Dvulkan=enabled
+    -Dvk-proc-addr=enabled
+    -Dshaderc=enabled
+    -Dglslang=enabled
     -Dopengl=enabled
     -Dgl-proc-addr=enabled
-    -Dlcms=disabled
-    -Dlibdovi=disabled
-    -Dxxhash=disabled
+    -Dlcms=enabled
+    -Ddovi=enabled
+    -Dlibdovi=enabled
+    -Dxxhash=enabled
     -Dunwind=disabled
   )
   case "$OS" in
-    windows) opts+=(-Dd3d11=enabled -Dshaderc=enabled) ;;
-    *) opts+=(-Dd3d11=disabled -Dshaderc=disabled) ;;
+    windows) opts+=(-Dd3d11=enabled) ;;
+    *) opts+=(-Dd3d11=disabled) ;;
   esac
 
   run_meson "$bdir" "$SRC_DIR/libplacebo" "${opts[@]}"
@@ -629,9 +858,10 @@ build_mpv() {
     -Ddvdnav=disabled
     -Dcdda=disabled
     -Dvapoursynth=disabled
-    -Dvulkan=disabled
+    -Dvulkan=enabled
+    -Dshaderc=enabled
     -Dzimg=disabled
-    -Dlcms2=disabled
+    -Dlcms2=enabled
     -Drubberband=disabled
     -Dsdl2-audio=disabled
     -Dsdl2-video=disabled
@@ -671,12 +901,16 @@ build_mpv() {
       )
       ;;
     macos)
+      local macos_min="${MACOSX_DEPLOYMENT_TARGET:-11.0}"
+      # clipboard-mac.m includes osdep/mac/swift.h from the Swift custom_target.
+      # -target keeps the x86_64 slice of a universal build from compiling as arm64.
       opts+=(
         -Dcoreaudio=enabled
         -Dcocoa=enabled
         -Dgl-cocoa=enabled
         -Dvideotoolbox-gl=enabled
-        -Dswift-build=disabled
+        -Dswift-build=enabled
+        "-Dswift-flags=-target ${ARCH}-apple-macos${macos_min}"
         -Dmacos-cocoa-cb=disabled
         -Dmacos-media-player=disabled
         -Dmacos-touchbar=disabled
@@ -735,8 +969,10 @@ build_mpv() {
       ;;
   esac
 
-  if [[ "$OS" != windows ]]; then
-    opts+=(-Dshaderc=disabled -Dspirv-cross=disabled)
+  if [[ "$OS" == windows ]]; then
+    opts+=(-Dspirv-cross=enabled)
+  else
+    opts+=(-Dspirv-cross=disabled)
   fi
 
   run_meson "$bdir" "$SRC_DIR/mpv" "${opts[@]}"
@@ -755,6 +991,11 @@ build_deps() {
   build_libass
   build_libiconv
   build_uchardet
+  build_vulkan_headers
+  build_vulkan_loader
+  build_xxhash
+  build_lcms2
+  build_libdovi
   build_spirv_cross
   build_shaderc
   build_libplacebo

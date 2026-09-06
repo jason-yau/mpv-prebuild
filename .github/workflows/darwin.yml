@@ -31,6 +31,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Cache cargo-c
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin
+            ~/.cargo/registry
+            ~/.rustup
+          key: rust-c-${{ runner.os }}-${{ runner.arch }}
+
       - name: Host packages
         run: |
           brew install cmake meson ninja pkg-config nasm automake autoconf libtool
