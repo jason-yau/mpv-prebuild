@@ -20,7 +20,7 @@ on:
       arch:
         type: choice
         default: arm64
-        options: [arm64, simulator-arm64, simulator-x86_64, all]
+        options: [arm64, simulator-arm64, all]
 
 jobs:
   build:
@@ -76,9 +76,6 @@ jobs:
               ;;
             simulator-arm64)
               bash ./scripts/build.sh --os iossimulator --arch arm64 --flavor all
-              ;;
-            simulator-x86_64)
-              bash ./scripts/build.sh --os iossimulator --arch x86_64 --flavor all
               ;;
             all)
               bash ./scripts/build.sh --os ios --arch arm64 --flavor all
