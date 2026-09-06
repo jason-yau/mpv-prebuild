@@ -35,6 +35,7 @@ fetch() {
     log "downloading $name"
     log "  $url"
     if curl -L --fail --retry 3 --retry-delay 2 --retry-all-errors --connect-timeout 20 \
+      -A "mpv-prebuild" \
       -o "$archive.partial" "$url"; then
       mv "$archive.partial" "$archive"
       actual=$(sha256_of "$archive")
@@ -42,7 +43,11 @@ fetch() {
         FETCHED_ARCHIVE="$archive"
         return
       fi
-      log "sha256 mismatch for $(basename "$archive") (got $actual)"
+      if head -c 256 "$archive" | grep -qiE '<(!DOCTYPE|html)'; then
+        log "$(basename "$archive") is HTML, not the archive (got $actual)"
+      else
+        log "sha256 mismatch for $(basename "$archive") (got $actual)"
+      fi
       rm -f "$archive"
     else
       rm -f "$archive.partial"
@@ -108,7 +113,8 @@ fetch_src uchardet "$UCHARDET_URL" "${UCHARDET_SHA256:-}" \
 fetch_src libiconv "$LIBICONV_URL" "${LIBICONV_SHA256:-}"
 fetch_src ffmpeg     "$FFMPEG_URL"     "${FFMPEG_SHA256:-}"
 fetch_src mpv        "$MPV_URL"        "${MPV_SHA256:-}"
-fetch_src x264       "$X264_URL"       "${X264_SHA256:-}"
+fetch_src x264       "$X264_URL"       "${X264_SHA256:-}" \
+  "https://code.videolan.org/videolan/x264/-/archive/b35605ace3ddf7c1a5d67a2eb553f034aef41d55/x264-b35605ace3ddf7c1a5d67a2eb553f034aef41d55.tar.gz"
 fetch_src libplacebo         "$LIBPLACEBO_URL"           "${LIBPLACEBO_SHA256:-}"
 fetch_src vulkan-headers     "$VULKAN_HEADERS_URL"       "${VULKAN_HEADERS_SHA256:-}"
 fetch_src vulkan-loader      "$VULKAN_LOADER_URL"        "${VULKAN_LOADER_SHA256:-}"
