@@ -14,7 +14,7 @@
 ## 产物
 
 ```
-libmpv-<os>-<arch>-<flavor>-<version>/
+libmpv-<mpv-version>-<os>-<arch>-<flavor>-<version>/
   include/mpv/          # client.h render.h render_gl.h stream_cb.h
   lib/                  # libmpv.so / libmpv.dylib / libmpv.dll.a
   bin/                  # Windows: libmpv-2.dll
@@ -23,13 +23,15 @@ libmpv-<os>-<arch>-<flavor>-<version>/
   licenses/
 ```
 
+`<version>` 来自 `--version` / workflow 输入。为空时用 UTC 构建时间 `YYYYMMDDHHMMSS`。
+
 | 平台 | 典型产物 | 说明 |
 | --- | --- | --- |
-| Windows | `libmpv-windows-x86_64-lgpl-*.zip` / `*-gpl-*.zip` | `bin/libmpv-2.dll` + 导入库 |
-| Android | `libmpv-android-jni-lgpl-*.tar.gz` / `*-gpl-*.tar.gz` | `jniLibs/<abi>/libmpv.so` |
-| Linux | `libmpv-linux-x86_64-lgpl-*.tar.gz` / `*-gpl-*.tar.gz` | Ubuntu 原生 `libmpv.so`（另有 arm64） |
-| macOS | `libmpv-macos-universal-lgpl-*.tar.gz` / `*-gpl-*.tar.gz` | `lipo` 后的 `libmpv*.dylib` |
-| iOS | `libmpv-ios-arm64-lgpl-*.tar.gz` / `*-gpl-*.tar.gz` | 设备 arm64 dylib |
+| Windows | `libmpv-0.41.0-windows-x86_64-lgpl-*.zip` / `*-gpl-*.zip` | `bin/libmpv-2.dll` + 导入库 |
+| Android | `libmpv-0.41.0-android-jni-lgpl-*.tar.gz` / `*-gpl-*.tar.gz` | `jniLibs/<abi>/libmpv.so` |
+| Linux | `libmpv-0.41.0-linux-x86_64-lgpl-*.tar.gz` / `*-gpl-*.tar.gz` | Ubuntu 原生 `libmpv.so`（另有 arm64） |
+| macOS | `libmpv-0.41.0-macos-universal-lgpl-*.tar.gz` / `*-gpl-*.tar.gz` | `lipo` 后的 `libmpv*.dylib` |
+| iOS | `libmpv-0.41.0-ios-arm64-lgpl-*.tar.gz` / `*-gpl-*.tar.gz` | 设备 arm64 dylib |
 
 版本钉在 `config/versions.env`（当前 mpv 0.41.0 + FFmpeg 9.0.1）。
 
@@ -93,7 +95,7 @@ Windows 运行时把 `libmpv-2.dll` 放到可执行文件旁。
 
 ### Linux
 
-解压 `libmpv-linux-*.tar.gz` 后按上面的 pkg-config / CMake 方式链接 `lib/libmpv.so`。
+解压 `libmpv-0.41.0-linux-*.tar.gz` 后按上面的 pkg-config / CMake 方式链接 `lib/libmpv.so`。
 
 Linux 产物（x86_64 和 arm64）都在 Ubuntu 22.04（glibc 2.35）上构建，可在同等或更新的发行版上运行。jammy 缺包或版本不够 mpv 0.41 用，Linux 构建会把这些编进 prefix，而不是把 runner（以及 glibc）升到 24.04：**libdisplay-info**、**libwayland 1.23**、**wayland-protocols 1.38**。原生 PipeWire 链发行版的 `libpipewire-0.3`（Ubuntu 22.04 是 0.3.48；mpv 0.41 上游要求 0.3.57，构建时会打兼容补丁）。Pulse / ALSA 仍然可用，包括 `pipewire-pulse`。
 
@@ -111,7 +113,7 @@ mpv 0.41 里 X11、VDPAU、JACK 是 GPL-only。**lgpl** Linux 构建保留 Wayla
 
 ### Android
 
-解压 `libmpv-android-jni-*.tar.gz` 后，把 `jniLibs/` 和 `include/` 接到模块：
+解压 `libmpv-0.41.0-android-jni-*.tar.gz` 后，把 `jniLibs/` 和 `include/` 接到模块：
 
 ```
 src/main/jniLibs/<abi>/libmpv.so

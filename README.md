@@ -14,7 +14,7 @@ Dependencies are statically linked into `libmpv` except on Linux, where desktop 
 ## Artifacts
 
 ```
-libmpv-<os>-<arch>-<flavor>-<version>/
+libmpv-<mpv-version>-<os>-<arch>-<flavor>-<version>/
   include/mpv/          # client.h render.h render_gl.h stream_cb.h
   lib/                  # libmpv.so / libmpv.dylib / libmpv.dll.a
   bin/                  # Windows: libmpv-2.dll
@@ -23,13 +23,15 @@ libmpv-<os>-<arch>-<flavor>-<version>/
   licenses/
 ```
 
+`<version>` is `--version` / the workflow input. If it is empty, the UTC build time `YYYYMMDDHHMMSS` is used.
+
 | Platform | Typical artifact | Notes |
 | --- | --- | --- |
-| Windows | `libmpv-windows-x86_64-lgpl-*.zip` / `*-gpl-*.zip` | `bin/libmpv-2.dll` + import library |
-| Android | `libmpv-android-jni-lgpl-*.tar.gz` / `*-gpl-*.tar.gz` | `jniLibs/<abi>/libmpv.so` |
-| Linux | `libmpv-linux-x86_64-lgpl-*.tar.gz` / `*-gpl-*.tar.gz` | Native Ubuntu `libmpv.so` (arm64 as well) |
-| macOS | `libmpv-macos-universal-lgpl-*.tar.gz` / `*-gpl-*.tar.gz` | `lipo`'d `libmpv*.dylib` |
-| iOS | `libmpv-ios-arm64-lgpl-*.tar.gz` / `*-gpl-*.tar.gz` | Device arm64 dylib |
+| Windows | `libmpv-0.41.0-windows-x86_64-lgpl-*.zip` / `*-gpl-*.zip` | `bin/libmpv-2.dll` + import library |
+| Android | `libmpv-0.41.0-android-jni-lgpl-*.tar.gz` / `*-gpl-*.tar.gz` | `jniLibs/<abi>/libmpv.so` |
+| Linux | `libmpv-0.41.0-linux-x86_64-lgpl-*.tar.gz` / `*-gpl-*.tar.gz` | Native Ubuntu `libmpv.so` (arm64 as well) |
+| macOS | `libmpv-0.41.0-macos-universal-lgpl-*.tar.gz` / `*-gpl-*.tar.gz` | `lipo`'d `libmpv*.dylib` |
+| iOS | `libmpv-0.41.0-ios-arm64-lgpl-*.tar.gz` / `*-gpl-*.tar.gz` | Device arm64 dylib |
 
 Versions are pinned in `config/versions.env` (currently mpv 0.41.0 + FFmpeg 9.0.1).
 
@@ -93,7 +95,7 @@ On Windows, place `libmpv-2.dll` next to the executable.
 
 ### Linux
 
-Unpack `libmpv-linux-*.tar.gz` and link `lib/libmpv.so` with pkg-config or CMake as above.
+Unpack `libmpv-0.41.0-linux-*.tar.gz` and link `lib/libmpv.so` with pkg-config or CMake as above.
 
 Linux artifacts (x86_64 and arm64) are built on Ubuntu 22.04 (glibc 2.35) and run on that or newer. Jammy is missing or too old for several mpv 0.41 deps, so the Linux build vendors them into the prefix instead of moving the runner (and glibc) to 24.04: **libdisplay-info**, **libwayland 1.23**, and **wayland-protocols 1.38**. Native PipeWire is linked against the distro `libpipewire-0.3` (Ubuntu 22.04 is 0.3.48; mpv 0.41 is patched at build time because upstream wants 0.3.57). Pulse and ALSA remain available, including `pipewire-pulse`.
 
@@ -111,7 +113,7 @@ Still required from the host:
 
 ### Android
 
-Unpack `libmpv-android-jni-*.tar.gz` and wire `jniLibs/` plus `include/` into the module:
+Unpack `libmpv-0.41.0-android-jni-*.tar.gz` and wire `jniLibs/` plus `include/` into the module:
 
 ```
 src/main/jniLibs/<abi>/libmpv.so
