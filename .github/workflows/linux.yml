@@ -1,0 +1,99 @@
+name: Linux
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        type: string
+        required: false
+        default: ""
+      arch:
+        type: string
+        required: false
+        default: "all"
+  workflow_dispatch:
+    inputs:
+      version:
+        type: string
+        required: false
+        default: ""
+      arch:
+        type: choice
+        default: all
+        options: [all, x86_64, arm64]
+
+jobs:
+  # Job-level `if` cannot use `matrix` (evaluated before the matrix expands).
+  select:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set.outputs.matrix }}
+    steps:
+      - id: set
+        run: |
+          set -euo pipefail
+          case "${{ inputs.arch }}" in
+            x86_64)
+              echo 'matrix={"include":[{"runner":"ubuntu-22.04","arch":"x86_64"}]}' >> "$GITHUB_OUTPUT"
+              ;;
+            arm64)
+              echo 'matrix={"include":[{"runner":"ubuntu-24.04-arm","arch":"arm64"}]}' >> "$GITHUB_OUTPUT"
+              ;;
+            all|"")
+              echo 'matrix={"include":[{"runner":"ubuntu-22.04","arch":"x86_64"},{"runner":"ubuntu-24.04-arm","arch":"arm64"}]}' >> "$GITHUB_OUTPUT"
+              ;;
+            *)
+              echo "unknown linux arch: ${{ inputs.arch }}" >&2
+              exit 1
+              ;;
+          esac
+
+  build:
+    needs: select
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.select.outputs.matrix) }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 360
+    env:
+      VERSION: ${{ inputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Host packages
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+            build-essential cmake pkg-config python3 python3-pip python3-setuptools \
+            nasm yasm curl unzip zip ninja-build autoconf automake libtool meson \
+            python3-jinja2 \
+            libegl1-mesa-dev libgl1-mesa-dev \
+            libasound2-dev libpulse-dev libpipewire-0.3-dev \
+            libx11-dev libxext-dev libxinerama-dev libxrandr-dev \
+            libxpresent-dev libxss-dev libxfixes-dev libxkbcommon-dev \
+            libva-dev libvdpau-dev \
+            libwayland-dev wayland-protocols libffi-dev \
+            libdrm-dev libgbm-dev \
+            libjack-jackd2-dev libsndio-dev patchelf hwdata
+          if ! meson --version | awk -F. '{exit !($1 > 1 || ($1 == 1 && $2 >= 3))}'; then
+            sudo pip3 install --upgrade meson ninja
+          fi
+
+      - name: Cache sources
+        uses: actions/cache@v4
+        with:
+          path: |
+            work/download
+            work/src
+          key: src-${{ hashFiles('config/versions.env') }}
+
+      - name: Build
+        run: bash ./scripts/build.sh --os linux --arch "${{ matrix.arch }}" --flavor all
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: libmpv-linux-${{ matrix.arch }}
+          path: dist/*.tar.gz
+          if-no-files-found: error
+          retention-days: 30

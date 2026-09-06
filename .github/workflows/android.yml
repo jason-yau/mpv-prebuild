@@ -1,0 +1,68 @@
+name: Android
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        type: string
+        required: false
+        default: ""
+      arch:
+        type: string
+        required: false
+        default: "all"
+  workflow_dispatch:
+    inputs:
+      version:
+        type: string
+        required: false
+        default: ""
+      arch:
+        type: choice
+        default: all
+        options: [all, arm64, armv7, x86, x86_64]
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 360
+    env:
+      VERSION: ${{ inputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Host packages
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+            build-essential cmake pkg-config python3 python3-pip python3-setuptools python3-jinja2 \
+            nasm yasm curl unzip zip ninja-build autoconf automake libtool
+          sudo pip3 install --upgrade meson ninja
+
+      - name: Android NDK
+        uses: nttld/setup-ndk@v1
+        id: ndk
+        with:
+          ndk-version: r29
+          link-to-sdk: true
+
+      - name: Cache sources
+        uses: actions/cache@v4
+        with:
+          path: |
+            work/download
+            work/src
+          key: src-${{ hashFiles('config/versions.env') }}
+
+      - name: Build
+        env:
+          ANDROID_NDK_HOME: ${{ steps.ndk.outputs.ndk-path }}
+        run: bash ./scripts/build.sh --os android --arch "${{ inputs.arch }}" --flavor all
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: libmpv-android-${{ inputs.arch }}
+          path: dist/*.tar.gz
+          if-no-files-found: error
+          retention-days: 30

@@ -1,0 +1,178 @@
+name: Build libmpv
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Artifact version label (empty = <mpv>-<UTC timestamp>)
+        required: false
+        type: string
+        default: ""
+      platforms:
+        description: Platforms to build
+        required: true
+        type: choice
+        default: all
+        options:
+          - all
+          - windows
+          - android
+          - darwin
+          - linux
+          - ubuntu
+      windows_arch:
+        description: Windows architecture
+        type: choice
+        default: x86_64
+        options:
+          - x86_64
+          - arm64
+          - all
+      android_arch:
+        description: Android architecture
+        type: choice
+        default: all
+        options:
+          - all
+          - arm64
+          - armv7
+          - x86
+          - x86_64
+      darwin_target:
+        description: Apple target
+        type: choice
+        default: macos-universal
+        options:
+          - macos-universal
+          - macos-arm64
+          - ios-arm64
+      linux_arch:
+        description: Linux architecture
+        type: choice
+        default: all
+        options:
+          - all
+          - x86_64
+          - arm64
+      publish:
+        description: Publish a GitHub Release
+        type: boolean
+        default: false
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.set.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: set
+        name: Resolve version label
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "push" ]; then
+            v="${GITHUB_REF_NAME}"
+          elif [ -n "${{ inputs.version }}" ]; then
+            v="${{ inputs.version }}"
+          else
+            # Strip CRLF so Windows-edited versions.env works on Linux runners.
+            mpv=$(tr -d '\r' < config/versions.env | awk -F= '/^MPV_VERSION=/{print $2; exit}')
+            [ -n "$mpv" ] || { echo "MPV_VERSION missing from config/versions.env" >&2; exit 1; }
+            v="${mpv}-$(date -u +%Y%m%d%H%M%S)"
+          fi
+          if [ -z "$v" ]; then
+            echo "refusing empty version label" >&2
+            exit 1
+          fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "Using version $v"
+
+  windows:
+    needs: [version]
+    if: >-
+      github.event_name == 'push' ||
+      inputs.platforms == 'all' ||
+      inputs.platforms == 'windows'
+    uses: ./.github/workflows/windows.yml
+    with:
+      version: ${{ needs.version.outputs.version }}
+      arch: ${{ github.event_name == 'push' && 'x86_64' || inputs.windows_arch }}
+
+  android:
+    needs: [version]
+    if: >-
+      github.event_name == 'push' ||
+      inputs.platforms == 'all' ||
+      inputs.platforms == 'android'
+    uses: ./.github/workflows/android.yml
+    with:
+      version: ${{ needs.version.outputs.version }}
+      arch: ${{ github.event_name == 'push' && 'all' || inputs.android_arch }}
+
+  darwin:
+    needs: [version]
+    if: >-
+      github.event_name == 'push' ||
+      inputs.platforms == 'all' ||
+      inputs.platforms == 'darwin'
+    uses: ./.github/workflows/darwin.yml
+    with:
+      version: ${{ needs.version.outputs.version }}
+      target: ${{ github.event_name == 'push' && 'macos-universal' || inputs.darwin_target }}
+
+  linux:
+    needs: [version]
+    if: >-
+      github.event_name == 'push' ||
+      inputs.platforms == 'all' ||
+      inputs.platforms == 'linux' ||
+      inputs.platforms == 'ubuntu'
+    uses: ./.github/workflows/linux.yml
+    with:
+      version: ${{ needs.version.outputs.version }}
+      arch: ${{ github.event_name == 'push' && 'all' || inputs.linux_arch }}
+
+  release:
+    needs: [version, windows, android, darwin, linux]
+    if: >-
+      always() &&
+      !cancelled() &&
+      needs.version.result == 'success' &&
+      (github.event_name == 'push' || inputs.publish) &&
+      (needs.windows.result == 'success' || needs.windows.result == 'skipped') &&
+      (needs.android.result == 'success' || needs.android.result == 'skipped') &&
+      (needs.darwin.result == 'success' || needs.darwin.result == 'skipped') &&
+      (needs.linux.result == 'success' || needs.linux.result == 'skipped') &&
+      (needs.windows.result == 'success' ||
+       needs.android.result == 'success' ||
+       needs.darwin.result == 'success' ||
+       needs.linux.result == 'success')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+          pattern: libmpv-*
+      - name: List artifacts
+        run: find dist -type f | sort
+      - uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.version.outputs.version }}
+          name: ${{ needs.version.outputs.version }}
+          generate_release_notes: true
+          files: |
+            dist/*.tar.gz
+            dist/*.zip
+          fail_on_unmatched_files: false

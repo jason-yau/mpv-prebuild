@@ -1,0 +1,67 @@
+name: Windows
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        type: string
+        required: false
+        default: ""
+      arch:
+        type: string
+        required: false
+        default: "x86_64"
+  workflow_dispatch:
+    inputs:
+      version:
+        type: string
+        required: false
+        default: ""
+      arch:
+        type: choice
+        default: x86_64
+        options: [x86_64, arm64, all]
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 360
+    env:
+      VERSION: ${{ inputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Host packages
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+            build-essential cmake pkg-config python3 python3-pip python3-setuptools python3-jinja2 \
+            nasm yasm curl unzip zip ninja-build autoconf automake libtool
+          sudo pip3 install --upgrade meson ninja
+
+      - name: llvm-mingw
+        run: |
+          dest=$(bash ./scripts/setup-llvm-mingw.sh)
+          echo "LLVM_MINGW_HOME=$dest" >> "$GITHUB_ENV"
+          echo "$dest/bin" >> "$GITHUB_PATH"
+
+      - name: Cache sources
+        uses: actions/cache@v4
+        with:
+          path: |
+            work/download
+            work/src
+          key: src-${{ hashFiles('config/versions.env') }}
+
+      - name: Build
+        run: bash ./scripts/build.sh --os windows --arch "${{ inputs.arch }}" --flavor all
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: libmpv-windows-${{ inputs.arch }}
+          path: |
+            dist/*.zip
+            dist/*.tar.gz
+          if-no-files-found: error
+          retention-days: 30

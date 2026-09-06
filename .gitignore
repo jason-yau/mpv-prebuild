@@ -1,0 +1,8 @@
+/refs/
+/work/
+/dist/
+/result
+/result-*
+*.log
+.DS_Store
+Thumbs.db
