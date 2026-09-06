@@ -12,15 +12,44 @@ need_cmd curl
 ensure_dir "$DL_DIR" "$SRC_DIR"
 
 fetch() {
-  local name="$1" url="$2" sha="${3:-}"
-  local archive="$DL_DIR/$(basename "$url")"
-  if [[ ! -f "$archive" ]]; then
+  # Usage: fetch NAME SHA256 URL [URL...]
+  # Writes the archive path to FETCHED_ARCHIVE. Must not run only in $(...) —
+  # die/exit inside command substitution would not stop the caller.
+  local name="$1" sha="$2"
+  shift 2
+  local url archive actual
+  FETCHED_ARCHIVE=""
+  [[ $# -ge 1 && -n "$sha" ]] || die "fetch $name: url/sha missing"
+  for url in "$@"; do
+    [[ -n "$url" ]] || continue
+    archive="$DL_DIR/$(basename "$url")"
+    if [[ -f "$archive" ]]; then
+      actual=$(sha256_of "$archive")
+      if [[ "$actual" == "$sha" ]]; then
+        FETCHED_ARCHIVE="$archive"
+        return
+      fi
+      log "removing stale $archive"
+      rm -f "$archive"
+    fi
     log "downloading $name"
-    curl -L --fail --retry 5 --retry-delay 2 -o "$archive.partial" "$url"
-    mv "$archive.partial" "$archive"
-  fi
-  verify_sha256 "$archive" "$sha"
-  printf '%s\n' "$archive"
+    log "  $url"
+    if curl -L --fail --retry 3 --retry-delay 2 --connect-timeout 20 \
+      -o "$archive.partial" "$url"; then
+      mv "$archive.partial" "$archive"
+      actual=$(sha256_of "$archive")
+      if [[ "$actual" == "$sha" ]]; then
+        FETCHED_ARCHIVE="$archive"
+        return
+      fi
+      log "sha256 mismatch for $(basename "$archive") (got $actual)"
+      rm -f "$archive"
+    else
+      rm -f "$archive.partial"
+      log "download failed: $url"
+    fi
+  done
+  die "download failed: $name (all mirrors exhausted)"
 }
 
 extract_to() {
@@ -53,15 +82,15 @@ extract_to() {
 
 fetch_src() {
   local name="$1" url="$2" sha="${3:-}"
+  shift 3
   local dest="$SRC_DIR/$name"
   if [[ -d "$dest" && -n "$(ls -A "$dest" 2>/dev/null || true)" ]]; then
     log "using cached source $name"
     return
   fi
-  local archive
-  archive=$(fetch "$name" "$url" "$sha")
+  fetch "$name" "$sha" "$url" "$@"
   log "extracting $name"
-  extract_to "$archive" "$dest"
+  extract_to "$FETCHED_ARCHIVE" "$dest"
 }
 
 fetch_src zlib     "$ZLIB_URL"     "${ZLIB_SHA256:-}"
@@ -73,7 +102,9 @@ fetch_src freetype "$FREETYPE_URL" "${FREETYPE_SHA256:-}"
 fetch_src harfbuzz "$HARFBUZZ_URL" "${HARFBUZZ_SHA256:-}"
 fetch_src fribidi  "$FRIBIDI_URL"  "${FRIBIDI_SHA256:-}"
 fetch_src libass   "$LIBASS_URL"   "${LIBASS_SHA256:-}"
-fetch_src uchardet "$UCHARDET_URL" "${UCHARDET_SHA256:-}"
+fetch_src uchardet "$UCHARDET_URL" "${UCHARDET_SHA256:-}" \
+  "https://deb.debian.org/debian/pool/main/u/uchardet/uchardet_0.0.8.orig.tar.xz" \
+  "https://mirrors.ustc.edu.cn/debian/pool/main/u/uchardet/uchardet_0.0.8.orig.tar.xz"
 fetch_src libiconv "$LIBICONV_URL" "${LIBICONV_SHA256:-}"
 fetch_src ffmpeg     "$FFMPEG_URL"     "${FFMPEG_SHA256:-}"
 fetch_src mpv        "$MPV_URL"        "${MPV_SHA256:-}"
@@ -92,16 +123,23 @@ vendor_into() {
 
 if [[ ! -f "$SRC_DIR/libplacebo/3rdparty/glad/glad/__init__.py" ]]; then
   log "vendoring libplacebo 3rdparty/glad"
-  vendor_into "$SRC_DIR/libplacebo/3rdparty/glad" "$(fetch glad "$GLAD_URL" "${GLAD_SHA256:-}")"
+  fetch glad "${GLAD_SHA256:-}" "$GLAD_URL"
+  vendor_into "$SRC_DIR/libplacebo/3rdparty/glad" "$FETCHED_ARCHIVE"
 fi
 if [[ ! -f "$SRC_DIR/libplacebo/3rdparty/fast_float/include/fast_float/fast_float.h" ]]; then
   log "vendoring libplacebo 3rdparty/fast_float"
-  vendor_into "$SRC_DIR/libplacebo/3rdparty/fast_float" "$(fetch fast_float "$FAST_FLOAT_URL" "${FAST_FLOAT_SHA256:-}")"
+  fetch fast_float "${FAST_FLOAT_SHA256:-}" "$FAST_FLOAT_URL"
+  vendor_into "$SRC_DIR/libplacebo/3rdparty/fast_float" "$FETCHED_ARCHIVE"
+fi
+if [[ ! -f "$SRC_DIR/libplacebo/3rdparty/Vulkan-Headers/include/vulkan/vulkan.h" ]]; then
+  log "vendoring libplacebo 3rdparty/Vulkan-Headers"
+  fetch vulkan-headers "${VULKAN_HEADERS_SHA256:-}" "$VULKAN_HEADERS_URL"
+  vendor_into "$SRC_DIR/libplacebo/3rdparty/Vulkan-Headers" "$FETCHED_ARCHIVE"
 fi
 
 ensure_dir "$WORK_DIR/bin"
-gas_src=$(fetch gas-preprocessor "$GAS_PREPROCESSOR_URL" "$GAS_PREPROCESSOR_SHA256")
-cp "$gas_src" "$WORK_DIR/bin/gas-preprocessor.pl"
+fetch gas-preprocessor "$GAS_PREPROCESSOR_SHA256" "$GAS_PREPROCESSOR_URL"
+cp "$FETCHED_ARCHIVE" "$WORK_DIR/bin/gas-preprocessor.pl"
 chmod +x "$WORK_DIR/bin/gas-preprocessor.pl"
 
 log "sources ready in $SRC_DIR"

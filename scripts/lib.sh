@@ -75,6 +75,8 @@ require_sources() {
     || die "libplacebo 3rdparty/glad missing; run without --skip-download"
   [[ -f "$SRC_DIR/libplacebo/3rdparty/fast_float/include/fast_float/fast_float.h" ]] \
     || die "libplacebo 3rdparty/fast_float missing; run without --skip-download"
+  [[ -f "$SRC_DIR/libplacebo/3rdparty/Vulkan-Headers/include/vulkan/vulkan.h" ]] \
+    || die "libplacebo 3rdparty/Vulkan-Headers missing; run without --skip-download"
   if is_gpl; then
     if [[ ! -d "$SRC_DIR/x264" || -z "$(ls -A "$SRC_DIR/x264" 2>/dev/null || true)" ]]; then
       die "x264 sources missing; run without --skip-download"
@@ -126,6 +128,7 @@ sha256_of() {
 verify_sha256() {
   local file="$1" expect="${2:-}"
   [[ -n "$expect" ]] || die "missing SHA256 for $(basename "$file"); set it in config/versions.env"
+  [[ -f "$file" ]] || die "cannot verify SHA256: $file does not exist"
   local actual
   actual=$(sha256_of "$file")
   [[ "$actual" == "$expect" ]] || die "sha256 mismatch for $(basename "$file"): $actual != $expect"
@@ -210,6 +213,7 @@ run_cmake() {
     -DCMAKE_POSITION_INDEPENDENT_CODE=ON
     -DBUILD_SHARED_LIBS=OFF
     -DCMAKE_PREFIX_PATH="$PREFIX"
+    -DCMAKE_POLICY_VERSION_MINIMUM=3.5
   )
   if [[ -n "${CMAKE_TOOLCHAIN_FILE:-}" ]]; then
     args+=(-DCMAKE_TOOLCHAIN_FILE="$CMAKE_TOOLCHAIN_FILE")
