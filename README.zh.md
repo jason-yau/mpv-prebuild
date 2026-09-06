@@ -9,7 +9,7 @@
 - **lgpl**：`mpv -Dgpl=false`，FFmpeg 不开 `--enable-gpl` / `--enable-nonfree`，便于闭源商业使用（仍须遵守 LGPL）。
 - **gpl**：FFmpeg `--enable-gpl --enable-libx264`，mpv `-Dgpl=true`，带上 x264，**整体按 GPL 分发**。
 
-依赖都静态链进 `libmpv`。Linux 上桌面后端（ALSA、Pulse、X11、Wayland 等）仍是共享库，打包时会拷到 `libmpv.so` 旁边。使用时通常只需要对应 flavor 的共享库加上头文件。默认 `--flavor all`，两套都会编。GPU 渲染走 **libplacebo**（mpv 0.41 的 `vo_gpu_next` / `mpv_render`），OpenGL 全平台可用，Windows 另开 D3D11。未启用 Vulkan / shaderc。
+依赖都静态链进 `libmpv`。Linux 上桌面后端（ALSA、Pulse、X11、Wayland 等）仍是共享库，打包时会拷到 `libmpv.so` 旁边。使用时通常只需要对应 flavor 的共享库加上头文件。默认 `--flavor all`，两套都会编。GPU 渲染走 **libplacebo**（mpv 0.41 的 `vo_gpu_next` / `mpv_render`），OpenGL 全平台可用，Windows 另开 D3D11（shaderc + SPIRV-Cross）。未启用 Vulkan。
 
 ## 产物
 
@@ -139,7 +139,8 @@ fribidi
 libass (freetype + harfbuzz + fribidi)
 libiconv                # Windows/Android；Linux 和 Apple 用系统 libc
 uchardet
-libplacebo            # OpenGL；Windows 另有 D3D11
+shaderc + SPIRV-Cross # 仅 Windows（mpv/libplacebo D3D11）
+libplacebo            # OpenGL；Windows 另有 D3D11（shaderc + SPIRV-Cross）
 libdisplay-info       # 仅 Linux（mpv DRM / EDID）
 wayland + protocols   # 仅 Linux；发行版比 mpv 0.41 旧时编进 prefix
 x264                    # 仅 gpl

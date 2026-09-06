@@ -111,6 +111,7 @@ fetch_src mpv        "$MPV_URL"        "${MPV_SHA256:-}"
 fetch_src x264       "$X264_URL"       "${X264_SHA256:-}"
 fetch_src libplacebo         "$LIBPLACEBO_URL"           "${LIBPLACEBO_SHA256:-}"
 fetch_src spirv-cross        "$SPIRV_CROSS_URL"          "${SPIRV_CROSS_SHA256:-}"
+fetch_src shaderc            "$SHADERC_URL"              "${SHADERC_SHA256:-}"
 fetch_src libdisplay-info    "$LIBDISPLAY_INFO_URL"      "${LIBDISPLAY_INFO_SHA256:-}" \
   "https://mirrors.ustc.edu.cn/debian/pool/main/libd/libdisplay-info/libdisplay-info_0.3.0.orig.tar.bz2"
 fetch_src wayland            "$WAYLAND_URL"              "${WAYLAND_SHA256:-}" \
@@ -139,6 +140,23 @@ if [[ ! -f "$SRC_DIR/libplacebo/3rdparty/Vulkan-Headers/include/vulkan/vulkan.h"
   log "vendoring libplacebo 3rdparty/Vulkan-Headers"
   fetch vulkan-headers "${VULKAN_HEADERS_SHA256:-}" "$VULKAN_HEADERS_URL"
   vendor_into "$SRC_DIR/libplacebo/3rdparty/Vulkan-Headers" "$FETCHED_ARCHIVE"
+fi
+
+# shaderc release tarball has no git-sync-deps; drop in DEPS pins.
+if [[ ! -f "$SRC_DIR/shaderc/third_party/glslang/CMakeLists.txt" ]]; then
+  log "vendoring shaderc third_party/glslang"
+  fetch glslang "${GLSLANG_SHA256:-}" "$GLSLANG_URL"
+  vendor_into "$SRC_DIR/shaderc/third_party/glslang" "$FETCHED_ARCHIVE"
+fi
+if [[ ! -f "$SRC_DIR/shaderc/third_party/spirv-headers/CMakeLists.txt" ]]; then
+  log "vendoring shaderc third_party/spirv-headers"
+  fetch spirv-headers "${SPIRV_HEADERS_SHA256:-}" "$SPIRV_HEADERS_URL"
+  vendor_into "$SRC_DIR/shaderc/third_party/spirv-headers" "$FETCHED_ARCHIVE"
+fi
+if [[ ! -f "$SRC_DIR/shaderc/third_party/spirv-tools/CMakeLists.txt" ]]; then
+  log "vendoring shaderc third_party/spirv-tools"
+  fetch spirv-tools "${SPIRV_TOOLS_SHA256:-}" "$SPIRV_TOOLS_URL"
+  vendor_into "$SRC_DIR/shaderc/third_party/spirv-tools" "$FETCHED_ARCHIVE"
 fi
 
 ensure_dir "$WORK_DIR/bin"

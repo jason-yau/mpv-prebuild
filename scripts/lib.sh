@@ -68,6 +68,14 @@ require_sources() {
     if [[ ! -d "$SRC_DIR/spirv-cross" || -z "$(ls -A "$SRC_DIR/spirv-cross" 2>/dev/null || true)" ]]; then
       die "sources missing (spirv-cross); run without --skip-download"
     fi
+    [[ -f "$SRC_DIR/shaderc/libshaderc/include/shaderc/shaderc.h" ]] \
+      || die "sources missing (shaderc); run without --skip-download"
+    [[ -f "$SRC_DIR/shaderc/third_party/glslang/CMakeLists.txt" ]] \
+      || die "shaderc third_party/glslang missing; run without --skip-download"
+    [[ -f "$SRC_DIR/shaderc/third_party/spirv-headers/CMakeLists.txt" ]] \
+      || die "shaderc third_party/spirv-headers missing; run without --skip-download"
+    [[ -f "$SRC_DIR/shaderc/third_party/spirv-tools/CMakeLists.txt" ]] \
+      || die "shaderc third_party/spirv-tools missing; run without --skip-download"
   fi
   if [[ "${OS:-}" == linux ]]; then
     for name in libdisplay-info wayland wayland-protocols; do
@@ -266,8 +274,15 @@ run_cmake() {
   [[ -n "${CMAKE_OSX_ARCHITECTURES:-}" ]] && args+=(-DCMAKE_OSX_ARCHITECTURES="$CMAKE_OSX_ARCHITECTURES")
   [[ -n "${CMAKE_OSX_DEPLOYMENT_TARGET:-}" ]] && args+=(-DCMAKE_OSX_DEPLOYMENT_TARGET="$CMAKE_OSX_DEPLOYMENT_TARGET")
   cmake "${args[@]}" "$@"
-  cmake --build "$builddir" -j "$JOBS"
-  cmake --install "$builddir"
+  local build_args=(--build "$builddir" -j "$JOBS")
+  # Optional: CMAKE_BUILD_TARGET=foo CMAKE_SKIP_INSTALL=1 (used by shaderc).
+  if [[ -n "${CMAKE_BUILD_TARGET:-}" ]]; then
+    build_args+=(--target "$CMAKE_BUILD_TARGET")
+  fi
+  cmake "${build_args[@]}"
+  if [[ "${CMAKE_SKIP_INSTALL:-0}" != 1 ]]; then
+    cmake --install "$builddir"
+  fi
 }
 
 write_pc() {

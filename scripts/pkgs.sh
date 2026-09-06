@@ -241,35 +241,47 @@ _meson_link_iconv() {
   _write_meson_cross
 }
 
-# mpv 0.41 ignores iconv.pc. Restore the tarball meson.build, then on
-# MinGW/Bionic point find_library at PREFIX/lib (current target).
+# mpv 0.41 ignores iconv.pc. Restore the tarball meson.build, then:
+# - MinGW/Bionic: GNU libiconv in PREFIX/lib
+# - Apple: SDK libiconv is shared/.tbd; --prefer-static must not require .a
 _mpv_iconv_meson() {
   local f="$SRC_DIR/mpv/meson.build"
   local orig="$SRC_DIR/mpv/meson.build.prebuild-orig"
   [[ -f "$f" ]] || die "missing $f"
   [[ -f "$orig" ]] || cp "$f" "$orig"
   cp "$orig" "$f"
+  local mode="" libdir="$PREFIX/lib"
   case "$OS" in
-    windows|android) ;;
+    windows|android) mode=prefix ;;
+    macos|ios|iossimulator) mode=apple ;;
     *) return 0 ;;
   esac
-  local libdir="$PREFIX/lib"
   python3 -c '
 from pathlib import Path
 import sys
-path, libdir = Path(sys.argv[1]), sys.argv[2]
+path, mode, libdir = Path(sys.argv[1]), sys.argv[2], sys.argv[3]
 text = path.read_text()
 old = "iconv = dependency('\''iconv'\'', required: get_option('\''iconv'\''))"
+if mode == "prefix":
+    lookup = (
+        f"    iconv = cc.find_library('\''iconv'\'', dirs: ['\''{libdir}'\''], "
+        "required: get_option('\''iconv'\''))\n"
+    )
+else:
+    lookup = (
+        "    iconv = cc.find_library('\''iconv'\'', static: false, "
+        "required: get_option('\''iconv'\''))\n"
+    )
 new = (
     "iconv = dependency('\''iconv'\'', required: false)\n"
     "if not iconv.found()\n"
-    f"    iconv = cc.find_library('\''iconv'\'', dirs: ['\''{libdir}'\''], required: get_option('\''iconv'\''))\n"
+    + lookup +
     "endif"
 )
 if old not in text:
     sys.exit("mpv meson.build iconv lookup changed; cannot inject find_library")
 path.write_text(text.replace(old, new, 1))
-' "$f" "$libdir"
+' "$f" "$mode" "$libdir"
 }
 
 build_x264() {
@@ -518,6 +530,48 @@ build_spirv_cross() {
   stamp spirv-cross
 }
 
+build_shaderc() {
+  [[ "$OS" == windows ]] || return 0
+  is_stamped shaderc && { log "skip shaderc"; return; }
+  log "building shaderc"
+  need_cmd python3
+  local py
+  py=$(command -v python3)
+
+  # Combined static archive only (skip shared/glslc install).
+  CMAKE_SKIP_INSTALL=1 CMAKE_BUILD_TARGET=shaderc_combined \
+    run_cmake "$SRC_DIR/shaderc" \
+      -DSHADERC_SKIP_TESTS=ON \
+      -DSHADERC_SKIP_EXAMPLES=ON \
+      -DSHADERC_SKIP_EXECUTABLES=ON \
+      -DSHADERC_SKIP_INSTALL=ON \
+      -DSHADERC_SKIP_COPYRIGHT_CHECK=ON \
+      -DSHADERC_ENABLE_WERROR_COMPILE=OFF \
+      -DSHADERC_ENABLE_WGSL_OUTPUT=OFF \
+      -DSPIRV_SKIP_EXECUTABLES=ON \
+      -DSPIRV_SKIP_TESTS=ON \
+      -DSPIRV_WERROR=OFF \
+      -DENABLE_GLSLANG_BINARIES=OFF \
+      -DSPIRV_TOOLS_BUILD_STATIC=ON \
+      -DSPIRV_TOOLS_LIBRARY_TYPE=STATIC \
+      -DPython_EXECUTABLE="$py" \
+      -DPython3_EXECUTABLE="$py"
+
+  local bdir="$WORK_DIR/build/$TARGET_ID/shaderc"
+  local lib="$bdir/libshaderc/libshaderc_combined.a"
+  if [[ ! -f "$lib" ]]; then
+    lib=$(find "$bdir" -name 'libshaderc_combined.a' | head -n 1 || true)
+  fi
+  [[ -n "$lib" && -f "$lib" ]] || die "shaderc_combined was not built"
+  cp -a "$lib" "$PREFIX/lib/libshaderc_combined.a"
+  ensure_dir "$PREFIX/include/shaderc"
+  cp -a "$SRC_DIR/shaderc/libshaderc/include/shaderc/." "$PREFIX/include/shaderc/"
+  # Upstream shaderc.pc points at libshaderc_shared; mpv/libplacebo want 'shaderc'.
+  # -lc++: C++ archives linked into C libplacebo / libmpv (llvm-mingw libc++).
+  write_pc shaderc "$SHADERC_VERSION" "-lshaderc_combined -lc++"
+  stamp shaderc
+}
+
 build_libplacebo() {
   is_stamped libplacebo && { log "skip libplacebo"; return; }
   log "building libplacebo"
@@ -534,7 +588,6 @@ build_libplacebo() {
     -Dtests=false
     -Dvulkan=disabled
     -Dvk-proc-addr=disabled
-    -Dshaderc=disabled
     -Dglslang=disabled
     -Dopengl=enabled
     -Dgl-proc-addr=enabled
@@ -544,8 +597,8 @@ build_libplacebo() {
     -Dunwind=disabled
   )
   case "$OS" in
-    windows) opts+=(-Dd3d11=enabled) ;;
-    *) opts+=(-Dd3d11=disabled) ;;
+    windows) opts+=(-Dd3d11=enabled -Dshaderc=enabled) ;;
+    *) opts+=(-Dd3d11=disabled -Dshaderc=disabled) ;;
   esac
 
   run_meson "$bdir" "$SRC_DIR/libplacebo" "${opts[@]}"
@@ -564,7 +617,6 @@ build_mpv() {
 
   local opts=(
     -Ddefault_library=shared
-    --prefer-static
     -Dgpl="$gpl_flag"
     -Dlibmpv=true
     -Dcplayer=false
@@ -578,8 +630,6 @@ build_mpv() {
     -Dcdda=disabled
     -Dvapoursynth=disabled
     -Dvulkan=disabled
-    -Dshaderc=disabled
-    -Dspirv-cross=disabled
     -Dzimg=disabled
     -Dlcms2=disabled
     -Drubberband=disabled
@@ -595,11 +645,16 @@ build_mpv() {
     -Dgl=enabled
     -Dplain-gl=enabled
   )
+  # Linux distro .a files (X11, jpeg, drm, …) are not built -fPIC and cannot
+  # go into libmpv.so. PREFIX still has only static PIC archives.
+  if [[ "$OS" != linux ]]; then
+    opts+=(--prefer-static)
+  fi
 
   case "$OS" in
     android)
       opts+=(
-        -Degl=enabled
+        -Degl=disabled
         -Degl-android=enabled
         -Dopensles=enabled
         -Dandroid-media-ndk=enabled
@@ -608,6 +663,8 @@ build_mpv() {
     windows)
       opts+=(
         -Dwasapi=enabled
+        -Dshaderc=enabled
+        -Dspirv-cross=enabled
         -Dd3d11=enabled
         -Dgl-win32=enabled
         -Degl-angle=disabled
@@ -678,6 +735,10 @@ build_mpv() {
       ;;
   esac
 
+  if [[ "$OS" != windows ]]; then
+    opts+=(-Dshaderc=disabled -Dspirv-cross=disabled)
+  fi
+
   run_meson "$bdir" "$SRC_DIR/mpv" "${opts[@]}"
   stamp mpv
 }
@@ -695,6 +756,7 @@ build_deps() {
   build_libiconv
   build_uchardet
   build_spirv_cross
+  build_shaderc
   build_libplacebo
   build_libdisplay_info
   build_wayland

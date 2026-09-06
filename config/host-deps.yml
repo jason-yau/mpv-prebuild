@@ -44,7 +44,7 @@ ubuntu:
   - hwdata
   notes: |
     Prefer `pip3 install meson ninja` if distro meson < 1.3 (libplacebo requires Meson >= 1.3).
-    Windows builds also need llvm-mingw (see config/versions.env).
+    Windows builds also need llvm-mingw (see config/versions.env). Windows D3D11 compiles shaderc (Python is used at configure time).
     Android builds need an NDK matching ANDROID_NDK_VERSION.
     The desktop -dev packages (GL, audio, X11/Wayland, DRM/GBM, VA-API, VDPAU) are only required for native Linux builds.
     `patchelf` is required when packaging Linux SDKs (sets `$ORIGIN` on bundled .so files).

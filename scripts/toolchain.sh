@@ -353,6 +353,8 @@ _setup_darwin() {
   CFLAGS_EXTRA+=(-arch "$CLANG_ARCH" -isysroot "$sdk" "$minflag")
   CXXFLAGS_EXTRA+=(-arch "$CLANG_ARCH" -isysroot "$sdk" "$minflag" -stdlib=libc++)
   LDFLAGS_EXTRA+=(-arch "$CLANG_ARCH" -isysroot "$sdk" "$minflag")
+  # iconv lives in libiconv, not libSystem. Meson builtin links() needs -liconv.
+  LDFLAGS_EXTRA+=(-liconv)
   export DEVELOPER_DIR="$xcode/Contents/Developer"
 
   # FFmpeg host-cc tests do not inherit --extra-cflags. The Xcode clang

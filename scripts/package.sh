@@ -163,6 +163,31 @@ EOF
       fi
     done
   done
+  if [[ "$OS" == windows ]]; then
+    local wproj wdir wname
+    for wproj in spirv-cross shaderc; do
+      for cand in LICENSE LICENSE.txt COPYING COPYING.LIB; do
+        if [[ -f "$SRC_DIR/$wproj/$cand" ]]; then
+          cp "$SRC_DIR/$wproj/$cand" "$dest/licenses/${wproj}-${cand}"
+          break
+        fi
+      done
+    done
+    for wdir in \
+      "shaderc/third_party/glslang:glslang" \
+      "shaderc/third_party/spirv-tools:spirv-tools" \
+      "shaderc/third_party/spirv-headers:spirv-headers"
+    do
+      wname="${wdir##*:}"
+      wdir="${wdir%%:*}"
+      for cand in LICENSE LICENSE.txt COPYING; do
+        if [[ -f "$SRC_DIR/$wdir/$cand" ]]; then
+          cp "$SRC_DIR/$wdir/$cand" "$dest/licenses/${wname}-${cand}"
+          break
+        fi
+      done
+    done
+  fi
   if is_gpl; then
     for cand in COPYING COPYING.GPLv2 LICENSE; do
       if [[ -f "$SRC_DIR/x264/$cand" ]]; then
