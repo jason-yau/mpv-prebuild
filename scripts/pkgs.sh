@@ -803,7 +803,7 @@ build_libdovi() {
 
   # Do not leak IPHONEOS_DEPLOYMENT_TARGET into FFmpeg HOSTCC (ops_asmgen).
   if [[ "$OS" == ios || "$OS" == iossimulator ]]; then
-    export IPHONEOS_DEPLOYMENT_TARGET="${CMAKE_OSX_DEPLOYMENT_TARGET:-12.0}"
+    export IPHONEOS_DEPLOYMENT_TARGET="${CMAKE_OSX_DEPLOYMENT_TARGET:-13.0}"
     export SDKROOT="${CMAKE_OSX_SYSROOT:-}"
     saved_ios=1
   fi

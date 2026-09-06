@@ -336,13 +336,13 @@ _setup_darwin() {
       ;;
     ios)
       sdkname=iphoneos
-      minflag="-miphoneos-version-min=${IPHONEOS_DEPLOYMENT_TARGET:-12.0}"
-      CMAKE_OSX_DEPLOYMENT_TARGET="${IPHONEOS_DEPLOYMENT_TARGET:-12.0}"
+      minflag="-miphoneos-version-min=${IPHONEOS_DEPLOYMENT_TARGET:-13.0}"
+      CMAKE_OSX_DEPLOYMENT_TARGET="${IPHONEOS_DEPLOYMENT_TARGET:-13.0}"
       ;;
     iossimulator)
       sdkname=iphonesimulator
-      minflag="-mios-simulator-version-min=${IPHONEOS_DEPLOYMENT_TARGET:-12.0}"
-      CMAKE_OSX_DEPLOYMENT_TARGET="${IPHONEOS_DEPLOYMENT_TARGET:-12.0}"
+      minflag="-mios-simulator-version-min=${IPHONEOS_DEPLOYMENT_TARGET:-13.0}"
+      CMAKE_OSX_DEPLOYMENT_TARGET="${IPHONEOS_DEPLOYMENT_TARGET:-13.0}"
       ;;
   esac
 
