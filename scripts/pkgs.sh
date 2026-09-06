@@ -285,9 +285,10 @@ path.write_text(text.replace(old, new, 1))
 }
 
 # Ubuntu 22.04 ships PipeWire 0.3.48; mpv 0.41 meson wants >= 0.3.57 because
-# ao_pipewire.c calls pw_stream_get_time_n() (added in 0.3.50). Jammy still
-# has pw_stream_get_time(). Link the distro client like Pulse/ALSA — do not
-# vendor a newer libpipewire (SPA modules must match the session daemon).
+# ao_pipewire.c uses 0.3.50+ fields (pw_buffer.requested, pw_time.buffered)
+# and pw_stream_get_time_n(). Jammy still has pw_stream_get_time(). Link the
+# distro client like Pulse/ALSA — do not vendor a newer libpipewire (SPA
+# modules must match the session daemon).
 _mpv_pipewire_compat() {
   [[ "$OS" == linux ]] || return 0
   local meson="$SRC_DIR/mpv/meson.build"
@@ -295,6 +296,7 @@ _mpv_pipewire_compat() {
   [[ -f "$meson" && -f "$ao" ]] || die "missing mpv pipewire sources"
   python3 - "$meson" "$ao" <<'PY'
 from pathlib import Path
+import re
 import sys
 meson, ao = Path(sys.argv[1]), Path(sys.argv[2])
 mt = meson.read_text()
@@ -305,12 +307,11 @@ if old in mt:
 elif new not in mt:
     sys.exit("mpv meson.build pipewire version check changed")
 at = ao.read_text()
-if "mpv-prebuild-pw-stream-get-time-n" in at:
-    sys.exit(0)
-needle = "#if !PW_CHECK_VERSION(1, 0, 4)"
-if needle not in at:
-    sys.exit("ao_pipewire.c pw_stream_get_nsec guard changed")
-shim = """#if !PW_CHECK_VERSION(0, 3, 50)
+if "mpv-prebuild-pw-stream-get-time-n" not in at:
+    needle = "#if !PW_CHECK_VERSION(1, 0, 4)"
+    if needle not in at:
+        sys.exit("ao_pipewire.c pw_stream_get_nsec guard changed")
+    shim = """#if !PW_CHECK_VERSION(0, 3, 50)
 /* mpv-prebuild-pw-stream-get-time-n: jammy libpipewire 0.3.48 */
 static inline int pw_stream_get_time_n(struct pw_stream *s, struct pw_time *t, size_t size)
 {
@@ -320,7 +321,40 @@ static inline int pw_stream_get_time_n(struct pw_stream *s, struct pw_time *t, s
 #endif
 
 """
-ao.write_text(at.replace(needle, shim + needle, 1))
+    at = at.replace(needle, shim + needle, 1)
+if "mpv-prebuild-pw-buffer-requested" not in at:
+    pat = re.compile(
+        r"(^[ \t]*)if \(b->requested != 0\)\n"
+        r"[ \t]*nframes = MPMIN\(b->requested, nframes\);\n",
+        re.M,
+    )
+    repl = (
+        r"#if PW_CHECK_VERSION(0, 3, 50)\n"
+        r"/* mpv-prebuild-pw-buffer-requested */\n"
+        r"\1if (b->requested != 0)\n"
+        r"\1    nframes = MPMIN(b->requested, nframes);\n"
+        r"#endif\n"
+    )
+    at2, n = pat.subn(repl, at, count=1)
+    if n != 1:
+        sys.exit("ao_pipewire.c b->requested block changed")
+    at = at2
+if "mpv-prebuild-pw-time-buffered" not in at:
+    pat = re.compile(
+        r"(^[ \t]*)end_time \+= MP_TIME_S_TO_NS\(time\.buffered\) / ao->samplerate;\n",
+        re.M,
+    )
+    repl = (
+        r"#if PW_CHECK_VERSION(0, 3, 50)\n"
+        r"/* mpv-prebuild-pw-time-buffered */\n"
+        r"\1end_time += MP_TIME_S_TO_NS(time.buffered) / ao->samplerate;\n"
+        r"#endif\n"
+    )
+    at2, n = pat.subn(repl, at, count=1)
+    if n != 1:
+        sys.exit("ao_pipewire.c time.buffered line changed")
+    at = at2
+ao.write_text(at)
 PY
 }
 

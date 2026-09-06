@@ -43,7 +43,7 @@ Usage: scripts/build.sh --os <os> --arch <arch> [options]
   --skip-download
   --no-package
   --clean     wipe work/prefix for this target first
-  --version   artifact version label
+  --version   artifact version label (default: UTC YYYYMMDDHHMMSS)
 
 Android --arch all builds arm64, armv7, x86, x86_64 then a jniLibs zip.
 macOS --arch universal builds arm64 + x86_64 and lipo-s them.
@@ -72,6 +72,8 @@ case "$OS" in
   ubuntu) OS=linux ;;
 esac
 FLAVOR=$(normalize_flavor "$FLAVOR")
+VERSION="$(detect_version)"
+export VERSION
 
 need_cmd meson
 need_cmd ninja

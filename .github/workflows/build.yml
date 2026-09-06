@@ -85,10 +85,7 @@ jobs:
           elif [ -n "${{ inputs.version }}" ]; then
             v="${{ inputs.version }}"
           else
-            # Strip CRLF so Windows-edited versions.env works on Linux runners.
-            mpv=$(tr -d '\r' < config/versions.env | awk -F= '/^MPV_VERSION=/{print $2; exit}')
-            [ -n "$mpv" ] || { echo "MPV_VERSION missing from config/versions.env" >&2; exit 1; }
-            v="${mpv}-$(date -u +%Y%m%d%H%M%S)"
+            v="$(date -u +%Y%m%d%H%M%S)"
           fi
           if [ -z "$v" ]; then
             echo "refusing empty version label" >&2

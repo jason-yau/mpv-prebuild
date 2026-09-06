@@ -74,7 +74,8 @@ bundle_linux_shared_deps() {
 
 package_target() {
   local version="$1"
-  local out_name="libmpv-${OS}-${ARCH}-${FLAVOR}-${version}"
+  local out_name
+  out_name=$(artifact_stem "$OS" "$ARCH" "$FLAVOR" "$version")
   local dest="$DIST_DIR/$out_name"
   rm -rf "$dest"
   ensure_dir "$dest/include/mpv" "$dest/lib" "$dest/licenses"
@@ -210,7 +211,8 @@ EOF
 
 merge_android_abis() {
   local version="$1"
-  local out_name="libmpv-android-jni-${FLAVOR}-${version}"
+  local out_name
+  out_name=$(artifact_stem android jni "$FLAVOR" "$version")
   local dest="$DIST_DIR/$out_name"
   rm -rf "$dest"
   ensure_dir "$dest/include/mpv"
@@ -248,16 +250,15 @@ lipo_macos_universal() {
   [[ -d "$arm" && -d "$intel" ]] || die "macos universal requires arm64 and x86_64 prefixes"
   need_cmd lipo
 
-  local out_name="libmpv-macos-universal-${FLAVOR}-${version}"
-  local dest="$DIST_DIR/$out_name"
+  local out_name dest dylib base
+  out_name=$(artifact_stem macos universal "$FLAVOR" "$version")
+  dest="$DIST_DIR/$out_name"
   rm -rf "$dest"
   ensure_dir "$dest/include/mpv" "$dest/lib"
   cp -a "$arm/include/mpv/"*.h "$dest/include/mpv/"
 
-  local dylib
   dylib=$(ls "$arm"/lib/libmpv*.dylib | head -n1)
   [[ -n "$dylib" ]] || die "missing macos arm64 dylib"
-  local base
   base=$(basename "$dylib")
   lipo -create "$arm/lib/$base" "$intel/lib/$base" -output "$dest/lib/$base"
   install_name_tool -id '@rpath/libmpv.2.dylib' "$dest/lib/$base"

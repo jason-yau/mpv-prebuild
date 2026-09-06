@@ -124,12 +124,16 @@ detect_version() {
     printf '%s\n' "$VERSION"
     return
   fi
-  if git -C "$ROOT_DIR" describe --tags --exact-match HEAD >/dev/null 2>&1; then
-    git -C "$ROOT_DIR" describe --tags --exact-match HEAD
-    return
-  fi
+  date -u +%Y%m%d%H%M%S
+}
+
+# libmpv-<mpv-version>-<os>-<arch>-<flavor>-<version>
+artifact_stem() {
+  local os="$1" arch="$2" flavor="$3" ver="$4"
   [[ -n "${MPV_VERSION:-}" ]] || die "MPV_VERSION unset; call load_versions first"
-  printf '%s-%s\n' "$MPV_VERSION" "$(date -u +%Y%m%d%H%M%S)"
+  [[ -n "$os" && -n "$arch" && -n "$flavor" && -n "$ver" ]] \
+    || die "artifact_stem: os/arch/flavor/version required"
+  printf 'libmpv-%s-%s-%s-%s-%s' "$MPV_VERSION" "$os" "$arch" "$flavor" "$ver"
 }
 
 sha256_of() {
